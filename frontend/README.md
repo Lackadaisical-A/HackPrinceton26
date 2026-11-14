@@ -48,12 +48,13 @@ a page on `localhost` reaches them without the browser's local-network permissio
 `.gitattributes` keeps every checkout on LF line endings, so the Windows clone is byte-identical to
 the macOS one.
 
-### Continuous integration and hosting
+### Continuous integration and sharing
 
 `.github/workflows/frontend.yml` runs typecheck, lint, tests and the build on **macOS and Windows**
-for every push and pull request that touches `frontend/`. On `main` it then publishes `dist` to
-GitHub Pages, as a shareable copy of the design that runs on the simulator. Pages has to be turned
-on once by a repo admin: Settings → Pages → Source: **GitHub Actions**.
+for every push and pull request that touches `frontend/`. It does not deploy anything.
+
+To share a public copy (it runs on the simulator), run `npm run build` and drag the `dist` folder
+onto https://app.netlify.com/drop. Repeat to update it.
 
 ## The three screens
 
