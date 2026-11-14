@@ -1,0 +1,18 @@
+# Keep LF in the repo and in every checkout, so a clone on the Windows demo laptop
+# matches macOS byte for byte (lint, tests and the build see the same files).
+* text=auto eol=lf
+
+# Windows scripts need CRLF to run reliably in cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+*.mov binary

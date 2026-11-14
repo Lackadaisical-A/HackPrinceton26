@@ -10,7 +10,7 @@ watching (see "Live data" below).
 
 ## Run it
 
-Built and tested with Node 22.16.
+Built and tested with Node 22 (pinned in `.nvmrc`; 22.16 and 22.23 both pass).
 
 ```sh
 cd frontend
@@ -29,6 +29,31 @@ npm run dev        # development server, http://localhost:5173
 
 The build uses relative asset paths and hash routes (`#/trials`), so `dist` can be served from any
 folder by any static file server with no rewrite rules.
+
+More scripts: `npm run check` (typecheck, lint and tests in one go), `npm run test:watch`,
+`npm run dev:lan` (dev server reachable from other devices on the network, e.g. to try the design
+on the Windows laptop while editing on a Mac), and `npm run demo` (production build, served at
+http://localhost:4173 and opened in the browser).
+
+### Demo on the Windows laptop
+
+1. Install Node 22 LTS from https://nodejs.org (the Windows installer; the defaults are fine).
+2. Clone the repo, then double-click `demo.bat` in the repo root. It installs dependencies the
+   first time, builds, and opens http://localhost:4173.
+
+Serve the app from the laptop itself, not from the hosted copy, during a live demo: the bridge
+(`ws://127.0.0.1:8765`) and the camera stream (`http://127.0.0.1:8766`) run on the same laptop, and
+a page on `localhost` reaches them without the browser's local-network permission prompts.
+
+`.gitattributes` keeps every checkout on LF line endings, so the Windows clone is byte-identical to
+the macOS one.
+
+### Continuous integration and hosting
+
+`.github/workflows/frontend.yml` runs typecheck, lint, tests and the build on **macOS and Windows**
+for every push and pull request that touches `frontend/`. On `main` it then publishes `dist` to
+GitHub Pages, as a shareable copy of the design that runs on the simulator. Pages has to be turned
+on once by a repo admin: Settings → Pages → Source: **GitHub Actions**.
 
 ## The three screens
 
