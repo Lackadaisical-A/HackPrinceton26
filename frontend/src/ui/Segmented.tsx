@@ -34,10 +34,10 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
       role="radiogroup"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className={cx('relative isolate inline-flex max-w-full flex-wrap gap-0.5 rounded-sm border border-rule-strong bg-well p-0.5', className)}
+      className={cx('relative isolate inline-flex max-w-full flex-wrap gap-0.5 rounded-sm border border-rule bg-well p-[3px] shadow-[inset_0_1px_2px_rgb(42_16_48/0.06)]', className)}
     >
       {/* The selection is a thumb that slides between options. */}
-      <span aria-hidden="true" className="absolute top-0.5 bottom-0.5 left-0 -z-10 rounded-xs bg-ink shadow-sm" style={thumb} />
+      <span aria-hidden="true" className="absolute top-[3px] bottom-[3px] left-0 -z-10 rounded-xs bg-ink shadow-[0_2px_6px_-2px_rgb(42_16_48/0.5)]" style={thumb} />
       {options.map((option) => {
         const selected = option.value === value
         return (
@@ -51,7 +51,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cx(
-              'h-8 rounded-xs px-2.5 text-sm font-medium whitespace-nowrap transition-colors duration-200 md:h-7',
+              'h-8 rounded-xs px-3 text-sm font-semibold whitespace-nowrap transition-colors duration-200 md:h-7',
               'disabled:cursor-not-allowed disabled:opacity-50',
               selected ? 'text-plate' : 'text-ink-2 hover:text-ink',
             )}

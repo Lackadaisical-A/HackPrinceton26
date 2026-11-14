@@ -2,7 +2,7 @@ import { useId, type InputHTMLAttributes, type ReactNode } from 'react'
 import { cx } from './cx'
 
 export const INPUT_CLASS =
-  'h-10 w-full min-w-0 rounded-sm border border-rule-strong bg-plate px-2.5 text-sm text-ink placeholder:text-ink-3 disabled:opacity-50 md:h-9'
+  'h-10 w-full min-w-0 rounded-sm border border-rule-strong/55 bg-plate px-3 text-sm text-ink shadow-xs transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 focus:border-ink focus:shadow-[0_0_0_3px_var(--touch-200)] focus-visible:outline-none disabled:opacity-50 md:h-9'
 
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: string

@@ -26,30 +26,30 @@ function SourceStatus() {
 
   if (link.state === 'simulated')
     return (
-      <Chip tone="sim">
-        <span aria-hidden="true" className="live-dot text-ink-2" />
+      <Chip tone="sim-window">
+        <span aria-hidden="true" className="live-dot text-window-ink-2" />
         Simulated data
       </Chip>
     )
   if (link.state === 'open')
     return (
-      <Chip>
-        <span aria-hidden="true" className="live-dot text-touch-500" />
+      <Chip tone="window">
+        <span aria-hidden="true" className="live-dot text-touch-300" />
         Live data
       </Chip>
     )
   if (link.state === 'connecting')
     return (
-      <Chip>
-        <span aria-hidden="true" className="rec-breathe inline-block size-2 rounded-full bg-ink-3" />
+      <Chip tone="window">
+        <span aria-hidden="true" className="rec-breathe inline-block size-2 rounded-full bg-window-ink-2" />
         Connecting to the bridge
       </Chip>
     )
   if (link.state === 'retrying') {
     return (
       <span className="flex flex-wrap items-center gap-2">
-        <AlertRow alerts={linkAlerts} />
-        <Button size="sm" onClick={switchToSimulator}>
+        <AlertRow alerts={linkAlerts} onWindow />
+        <Button size="sm" variant="window" onClick={switchToSimulator}>
           Use simulated data
         </Button>
       </span>
@@ -57,8 +57,8 @@ function SourceStatus() {
   }
   return (
     <span className="flex items-center gap-2">
-      <Chip>Not connected</Chip>
-      <NavLink to="/signals" className="text-xs font-medium text-ink underline underline-offset-2">
+      <Chip tone="window">Not connected</Chip>
+      <NavLink to="/signals" className="focus-window text-xs font-semibold text-window-ink underline underline-offset-2">
         Choose a source
       </NavLink>
     </span>
@@ -72,10 +72,11 @@ function RecordButton() {
   if (!recording) {
     return (
       <Button
+        variant="window"
         onClick={toggleRecording}
         disabled={idle}
         hint="R"
-        icon={<IconRecord className="text-alarm" />}
+        icon={<IconRecord className="text-alarm-window" />}
         title="Saves every telemetry message to a .jsonl file. Video is not recorded."
       >
         Record
@@ -85,11 +86,11 @@ function RecordButton() {
   const startedAt = recording.startedAt
   return (
     <Button
-      variant="solid"
+      variant="window-alarm"
       onClick={toggleRecording}
       pressed
       hint="R"
-      icon={<IconStop className="rec-breathe text-alarm-window" />}
+      icon={<IconStop className="rec-breathe text-plate" />}
       aria-label="Stop recording and save the file"
     >
       <Readout read={() => clock((Date.now() - startedAt) / 1000)} hz={2} width={4} />
@@ -105,14 +106,14 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
   const marker = useIndicator(nav, '[aria-current="page"]', pathname)
 
   return (
-    <header className="border-b border-rule bg-panel">
+    <header className="sticky top-0 z-40 border-b border-window-ink/10 bg-window/95 text-window-ink shadow-[0_8px_24px_-16px_rgb(28_11_33/0.8)] backdrop-blur-md">
       <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-5 gap-y-1 px-3 md:px-4">
         <div className="flex items-center gap-2 py-2.5">
           <IconMark size={28} className="transition-transform duration-500 ease-spring hover:scale-110" />
-          <span className="text-base font-bold tracking-[0.08em] text-ink">PAUL</span>
+          <span className="text-lg font-extrabold tracking-[0.2em] text-window-ink">PAUL</span>
         </div>
 
-        <nav ref={nav} aria-label="Screens" className="relative flex self-stretch">
+        <nav ref={nav} aria-label="Screens" className="relative isolate flex items-center gap-0.5 self-stretch">
           {SCREENS.map((screen) => (
             <NavLink
               key={screen.to}
@@ -120,41 +121,40 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
               end={screen.end}
               className={({ isActive }) =>
                 cx(
-                  'relative isolate flex items-center px-3 text-sm font-medium transition-colors duration-150',
-                  // A soft wash on hover, inset from the bar's edges.
-                  'before:absolute before:inset-x-1 before:inset-y-2 before:-z-10 before:rounded-sm before:bg-well before:opacity-0 before:transition-opacity before:duration-150 hover:before:opacity-100',
-                  isActive ? 'text-ink' : 'text-ink-2 hover:text-ink',
+                  'focus-window relative flex h-8 items-center rounded-full px-3.5 text-sm font-semibold transition-colors duration-150',
+                  isActive ? 'text-window' : 'text-window-ink-2 hover:bg-window-ink/8 hover:text-window-ink',
                 )
               }
             >
               {screen.label}
             </NavLink>
           ))}
-          {/* The marker under the current screen sits on the bar's bottom rule and glides between screens. */}
-          <span aria-hidden="true" className="pointer-events-none absolute -bottom-px left-0 flex h-0.5 justify-center" style={marker}>
-            <span className="h-full w-[calc(100%-1.5rem)] rounded-full bg-ink" />
-          </span>
+          {/* A light pill behind the current screen that glides between screens. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-[calc(50%-1rem)] left-0 -z-10 h-8 rounded-full bg-window-ink shadow-[0_2px_10px_-2px_rgb(237_150_215/0.45)]"
+            style={marker}
+          />
         </nav>
 
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2 py-1.5">
           <SourceStatus />
           <Button
-            variant="quiet"
+            variant="window-quiet"
             pressed={speak}
             onClick={toggleSpeak}
             icon={speak ? <IconSpeaker /> : <IconSpeakerOff />}
             aria-label="Read captions aloud"
             title={speak ? 'Captions are read aloud (S)' : 'Captions are not read aloud (S)'}
-            className="w-10 px-0 md:w-9"
           />
           <RecordButton />
           <Button
-            variant="quiet"
+            variant="window-quiet"
             onClick={onHelp}
             icon={<IconKeyboard />}
             aria-label="Keyboard shortcuts"
             title="Keyboard shortcuts (?)"
-            className="w-10 px-0 max-md:hidden md:w-9"
+            className="max-md:hidden"
           />
         </div>
       </div>

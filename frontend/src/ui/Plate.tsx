@@ -16,10 +16,12 @@ export interface PlateProps {
 export function Plate({ title, note, aside, className, bodyClassName, children }: PlateProps) {
   const id = useId()
   return (
-    <section aria-labelledby={id} className={cx('min-w-0 rounded-lg border border-rule bg-plate transition-[border-color,box-shadow] duration-200 ease-out',
-        'hover:border-touch-200 hover:shadow-[0_6px_20px_-12px_rgb(94_17_112/0.35)]', className)}>
-      <header className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2.5 pb-2">
-        <h2 id={id} className="text-sm font-semibold text-ink">
+    <section aria-labelledby={id} className={cx('min-w-0 rounded-lg border border-rule/60 bg-plate shadow-[var(--shadow-plate)]',
+        'transition-[border-color,box-shadow,transform] duration-200 ease-out',
+        'hover:border-touch-200/80 hover:shadow-[var(--shadow-plate-hover)]', className)}>
+      <header className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3 pb-2">
+        <h2 id={id} className="flex items-center gap-2 text-base font-bold tracking-[-0.01em] text-ink">
+          <span aria-hidden="true" className="h-3.5 w-1 rounded-full bg-ink" />
           {title}
         </h2>
         {note && <span className="text-xs text-ink-3">{note}</span>}
