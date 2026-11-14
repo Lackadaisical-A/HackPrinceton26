@@ -1,20 +1,58 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  ACESFilmicToneMapping, Color, DirectionalLight, GridHelper, HemisphereLight,
-  Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer,
+  ACESFilmicToneMapping, CanvasTexture, Color, DirectionalLight, GridHelper, Group, HemisphereLight,
+  Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry,
+  Sprite, SpriteMaterial, SRGBColorSpace, WebGLRenderer,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { URDFRobot } from 'urdf-loader'
 import { LIMITS } from '../../config'
 import { schedule } from '../../render/scheduler'
 import { theme } from '../../render/theme'
-import { disposeModel, HOME_POSE, loadSO101, setRobotPose } from '../../robot/so101'
+import { easeGlow, glowLook, glowTarget } from '../../robot/loadGlow'
+import { disposeModel, HOME_POSE, loadSO101, MODEL_JOINTS, setRobotPose } from '../../robot/so101'
 import { useSettings } from '../../state/settings'
 import { bus } from '../../telemetry/bus'
 import type { RobotMessage } from '../../telemetry/contracts'
 import { Button } from '../../ui/Button'
 
 type ViewState = 'loading' | 'ready' | 'error'
+
+/** Sizes in metres; the arm stands about 0.4 m tall. */
+const CORE_RADIUS = 0.011
+const HALO_SIZE = 0.065
+/** Peak opacities at full load. */
+const CORE_OPACITY = 0.95
+const HALO_OPACITY = 0.9
+
+interface Glow {
+  group: Group
+  halo: Sprite
+  coreMaterial: MeshBasicMaterial
+  haloMaterial: SpriteMaterial
+  level: number
+  /** Last strength drawn, to redraw only on visible change. */
+  drawn: number
+}
+
+/** A soft white disc, tinted by the sprite material. */
+function haloTexture(): CanvasTexture {
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+    g.addColorStop(0, 'rgba(255,255,255,1)')
+    g.addColorStop(0.35, 'rgba(255,255,255,0.55)')
+    g.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, size, size)
+  }
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  return texture
+}
 
 /** An observed pose only: orbit/zoom never sends commands to the physical arm. */
 export default function ArmModel() {
@@ -102,6 +140,34 @@ export default function ArmModel() {
     })
     resize.observe(el)
 
+    // Load glow: one marker per servo, parented to its joint so it follows the arm.
+    const glowGeometry = new SphereGeometry(CORE_RADIUS, 16, 12)
+    const glowTexture = haloTexture()
+    const glows: Glow[] = []
+    const attachGlows = (model: URDFRobot) => {
+      for (const name of MODEL_JOINTS) {
+        const coreMaterial = new MeshBasicMaterial({
+          color: colors.alarm, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false,
+        })
+        const haloMaterial = new SpriteMaterial({
+          map: glowTexture, color: colors.alarmWindow, transparent: true, opacity: 0,
+          depthTest: false, depthWrite: false, toneMapped: false,
+        })
+        const core = new Mesh(glowGeometry, coreMaterial)
+        core.renderOrder = 11
+        const halo = new Sprite(haloMaterial)
+        halo.renderOrder = 10
+        halo.scale.setScalar(HALO_SIZE)
+        const group = new Group()
+        group.name = `${name}_load_glow`
+        group.visible = false
+        group.add(halo, core)
+        model.joints[name].add(group)
+        glows.push({ group, halo, coreMaterial, haloMaterial, level: 0, drawn: 0 })
+      }
+    }
+    let glowAt = -1
+
     let robot: URDFRobot | null = null
     let previous: RobotMessage | null = null
     let hadData = false
@@ -133,6 +199,20 @@ export default function ArmModel() {
         } else {
           showStatus(hadData ? 'Arm data lost · showing last pose' : 'Waiting for arm data · reference pose')
         }
+        const dtS = glowAt < 0 ? 0 : Math.min(0.25, (nowMs - glowAt) / 1000)
+        glowAt = nowMs
+        for (let i = 0; i < glows.length; i++) {
+          const glow = glows[i]
+          glow.level = easeGlow(glow.level, fresh ? glowTarget(sample.load, i) : 0, dtS)
+          const { strength, scale } = glowLook(glow.level)
+          if (Math.abs(strength - glow.drawn) <= 0.005 && !(strength === 0 && glow.drawn !== 0)) continue
+          glow.drawn = strength
+          glow.group.visible = strength > 0
+          glow.coreMaterial.opacity = CORE_OPACITY * (0.35 + 0.65 * strength)
+          glow.haloMaterial.opacity = HALO_OPACITY * Math.sqrt(strength)
+          glow.halo.scale.setScalar(HALO_SIZE * scale)
+          dirty = true
+        }
       }
       // Avoid a continuous GPU load while the camera/model is stationary.
       if (dirty) { renderer.render(scene, camera); dirty = false }
@@ -150,6 +230,7 @@ export default function ArmModel() {
     void loadSO101(abort.signal).then((loaded) => {
       if (abort.signal.aborted) { disposeModel(loaded); return }
       robot = loaded
+      attachGlows(robot)
       scene.add(robot)
       dirty = true
       if (contextAvailable) setState('ready')
@@ -169,6 +250,13 @@ export default function ArmModel() {
       controls.dispose()
       renderer.domElement.removeEventListener('webglcontextlost', contextLost)
       disposeModel(scene)
+      for (const glow of glows) {
+        glow.group.removeFromParent()
+        glow.coreMaterial.dispose()
+        glow.haloMaterial.dispose()
+      }
+      glowGeometry.dispose()
+      glowTexture.dispose()
       grid.geometry.dispose()
       for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.dispose()
       renderer.dispose()
@@ -191,7 +279,8 @@ export default function ArmModel() {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule px-3 py-2">
         <div className="text-xs"><p className="text-ink" role="status">{state === 'ready' ? message : 'SO-101 · 3D model'}</p>
-          <p className="mt-0.5 text-ink-3">Drag to orbit · scroll or pinch to zoom</p></div>
+          <p className="mt-0.5 text-ink-3">Drag to orbit · scroll or pinch to zoom</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-ink-3"><span aria-hidden="true" className="inline-block size-2 rounded-full bg-alarm" />Red glow = joint load</p></div>
         <Button size="sm" disabled={state !== 'ready'} onClick={() => reset.current()}>Reset view</Button>
       </div>
     </div>

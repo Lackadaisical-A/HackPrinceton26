@@ -29,6 +29,13 @@ function JointRows() {
     const positions = [...el.querySelectorAll<HTMLElement>('[data-position]')]
     const loads = [...el.querySelectorAll<HTMLElement>('[data-load-text]')]
     let textAt = -Infinity
+    // Last tint written per bar (percent of alarm red), so styles are only touched on change.
+    const tints = JOINTS.map(() => -1)
+    const tint = (i: number, pct: number) => {
+      if (pct === tints[i]) return
+      tints[i] = pct
+      fills[i].style.backgroundColor = `color-mix(in srgb, var(--alarm) ${pct}%, var(--ink-2))`
+    }
 
     return schedule(
       (nowMs) => {
@@ -42,6 +49,7 @@ function JointRows() {
           if (!robot) {
             marker.style.opacity = '0'
             fill.style.transform = 'scaleX(0)'
+            tint(i, 0)
             if (writeText) {
               positions[i].textContent = '–'
               loads[i].textContent = '–'
@@ -53,6 +61,7 @@ function JointRows() {
           marker.style.opacity = '1'
           marker.style.transform = `translateX(${((at - 1) * 100).toFixed(2)}%)`
           fill.style.transform = `scaleX(${load.toFixed(3)})`
+          tint(i, Math.round(load * 100))
           if (writeText) {
             positions[i].textContent =
               joint.unit === '%' ? `${robot.pos[i].toFixed(0)} %` : `${signed(robot.pos[i], 1)}°`
@@ -105,7 +114,9 @@ function JointRows() {
             <td className="w-[30%] py-1.5 pl-3">
               <div className="flex items-center gap-2">
                 <div className="relative h-1.5 min-w-6 flex-1 overflow-hidden rounded-xs bg-well" aria-hidden="true">
-                  <div data-load className="absolute inset-0 origin-left scale-x-0 bg-ink-2 will-change-transform" />
+                  {/* Starts empty via an inline transform: Tailwind v4's scale-x-0 sets the separate CSS
+                      `scale` property, which would multiply with the transform written below and pin it at 0. */}
+                  <div data-load className="absolute inset-0 origin-left bg-ink-2 will-change-transform" style={{ transform: 'scaleX(0)' }} />
                   {/* The level at which a high-load caution is raised. */}
                   <div className="absolute inset-y-0 w-px bg-ink" style={{ left: `${LIMITS.loadCaution * 100}%` }} />
                 </div>
