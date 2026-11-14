@@ -1,0 +1,188 @@
+@import "tailwindcss";
+
+/*
+ * PAUL design tokens.
+ *
+ * A light instrument panel in pale control-room green, with the camera feed as the one dark
+ * window. Indigo belongs to the touch channel only. Amber and red appear only for abnormal
+ * states and always travel with a shape and a label.
+ *
+ * Raw values live on :root so canvas renderers can read them (see render/theme.ts) and so a
+ * second theme can be added later by overriding this block.
+ */
+:root {
+  --panel: #d8e8e1;
+  --plate: #ebf5f0;
+  --well: #cbdcd4;
+  --rule: #b0c3ba;
+  --rule-strong: #798b82;
+
+  --ink: #14211d;
+  --ink-2: #3c4c47;
+  --ink-3: #556661;
+
+  --window: #09100e;
+  --window-ink: #ecf4f0;
+  --window-ink-2: #afbbb5;
+
+  --touch-100: #e5e6fc;
+  --touch-200: #c8c9f5;
+  --touch-300: #9da1ea;
+  --touch-400: #7b81df;
+  --touch-500: #575bcb;
+  --touch-600: #3a3eaa;
+  --touch-700: #22277b;
+
+  --caution: #f3b01d;
+  --caution-ink: #713f00;
+  --caution-window: #fac131;
+  --alarm: #d01d21;
+  --alarm-ink: #ac0311;
+  --alarm-window: #ff655a;
+}
+
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+
+  --font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 2.25rem;
+  --text-2xl--line-height: 2.5rem;
+
+  /* Radius follows hierarchy: controls are tighter than the plates that hold them. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@theme inline {
+  --color-panel: var(--panel);
+  --color-plate: var(--plate);
+  --color-well: var(--well);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+
+  --color-window: var(--window);
+  --color-window-ink: var(--window-ink);
+  --color-window-ink-2: var(--window-ink-2);
+
+  --color-touch-100: var(--touch-100);
+  --color-touch-200: var(--touch-200);
+  --color-touch-300: var(--touch-300);
+  --color-touch-400: var(--touch-400);
+  --color-touch-500: var(--touch-500);
+  --color-touch-600: var(--touch-600);
+  --color-touch-700: var(--touch-700);
+
+  --color-caution: var(--caution);
+  --color-caution-ink: var(--caution-ink);
+  --color-caution-window: var(--caution-window);
+  --color-alarm: var(--alarm);
+  --color-alarm-ink: var(--alarm-ink);
+  --color-alarm-window: var(--alarm-window);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    background: var(--panel);
+  }
+
+  body {
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button:not(:disabled),
+  [role="switch"]:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--touch-600);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--touch-200);
+  }
+
+  dialog::backdrop {
+    background: rgb(9 16 14 / 0.45);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+}
+
+/* Live numbers: the mono face with fixed-width digits, so values do not shift as they change. */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 0;
+}
+
+/* Diagonal hatching marks anything that is not real data: simulated or sample. */
+@utility hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--rule-strong) 38%, transparent) 4px 5px
+  );
+}
+
+/* Focus ring for controls that sit on the dark camera window. */
+@utility focus-window {
+  &:focus-visible {
+    outline-color: var(--window-ink);
+  }
+}
+
+/* The record dot breathes slowly while recording. Reduced motion holds it steady. */
+@keyframes rec-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@utility rec-breathe {
+  animation: rec-breathe 1.6s ease-in-out infinite;
+}

@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.py[oc]
+.pytest_cache/
+
+# Model weights, text encoder, baked exports (re-created by `python -m paul_vision.bake`)
+models/
+*.pt
+*.ts
+*.npz
+
+# Local run output
+runs/
+snapshots/
+recordings/
+
+# Test footage: the clips are large; sample_videos/README.md says where each one came from
+sample_videos/*
+!sample_videos/README.md

@@ -1,0 +1,114 @@
+# PAUL vision configuration. Every threshold and tuning value lives here; none are hardcoded.
+# All keys are required. Unknown or missing keys stop startup with an error naming the key.
+
+source:
+  default: wrist            # wrist | <camera index, e.g. 0> | <path to a video file>
+  # Replay mode, when the clip ends: exit | loop | hold.
+  # `hold` keeps running with a stalled feed, so subscribers see `degraded` (useful for testing them).
+  video_end: exit
+
+camera:
+  wrist_index: 1            # OpenCV index of the wrist camera (run scripts/list_cameras.py to find it)
+  backend: dshow            # dshow | msmf | any
+  width: 1280
+  height: 720
+  fps: 30
+  fourcc: MJPG              # MJPG is needed for HD at 30 FPS over USB 2.0; "" keeps the driver default
+  # Orientation is applied to the image itself, before detection, so that
+  # image-right = gripper-right and image-down = gripper-down.
+  rotate_deg: 0             # 0 | 90 | 180 | 270, clockwise
+  flip_h: false             # mirror left/right (applied after rotation)
+  flip_v: false             # mirror up/down (applied after rotation)
+  reopen_after_s: 1.0       # reopen the camera after this long without a frame
+  # A camera that was just opened gets this long for its first frame. Some need more than a second
+  # (a laptop's built-in camera: 1.1 s), and reopening one before then never lets it start.
+  first_frame_s: 3.0
+
+detector:
+  backend: auto             # auto | torch | openvino   (auto: torch if CUDA is available, else openvino)
+  device: auto              # auto | cpu | xpu (Intel GPU, openvino only) | 0 (CUDA index, torch only)
+  # Released YOLOE checkpoints are `-seg` models; the mask branch is removed when they are loaded.
+  # 26s sees small or distant objects that 26n misses (measured: a far mug scored 0.45 vs 0.00) for
+  # 2 ms more per frame on an idle Intel GPU (13.5 vs 11.6 ms) and about 7 ms more on a busy one.
+  # If the laptop cannot hold 20 FPS, try yoloe-26n-seg.pt.
+  weights:
+    torch: yoloe-26s-seg.pt       # used on the NVIDIA demo machine
+    openvino: yoloe-26s-seg.pt    # used on the Intel laptop
+  # Text prompts. Changing this list needs a re-bake: uv run python -m paul_vision.bake
+  classes: [cup, bottle, pill bottle, box]
+  # Network input as [height, width], multiples of 32. Match the aspect ratio of the oriented frame:
+  # 16:9 camera -> [384, 640]; the same camera rotated 90 or 270 degrees -> [640, 384].
+  # Smaller is faster and misses small objects sooner. The OpenVINO export is rebuilt when this changes.
+  imgsz: [384, 640]
+  conf_min: 0.15            # detector floor; anything below is never reported
+  iou: 0.5                  # NMS IoU
+  max_det: 20
+  agnostic_nms: true        # one box per object even if two labels fit
+  models_dir: models        # relative to this file; weights and baked artifacts live here
+
+tracker:
+  iou_min: 0.3              # minimum IoU to continue a track
+  center_dist_max: 0.15     # fallback match: max centre distance (normalized) when IoU fails
+  ttl_s: 1.0                # an unseen track keeps its ID this long
+  # One object gets different labels from different sides (a pill bottle is "bottle" from the side and
+  # often "cup" cap-first), so a track's label is a vote: each detection adds its confidence to its label.
+  label_memory_s: 10.0      # votes fade with this time constant (0 = always use the newest label)
+  label_margin: 0.5         # another label must lead the current one by this fraction to replace it
+
+selection:
+  conf_lock: 0.40           # confidence needed to acquire a target
+  conf_keep: 0.25           # confidence needed to keep the current target
+  center_weight: 1.0        # score = confidence x (1 - center_weight x distance from centre); 0 = confidence only
+  switch_margin: 0.25       # a rival must score this fraction higher than the current target...
+  switch_dwell_s: 0.5       # ...continuously for this long before the target switches
+  coast_s: 0.15             # hold the last guidance this long when the target misses a frame (0 = off)
+  preferred_label: null     # restrict the target to one label (the M2 voice override sets this)
+
+guidance:
+  smoothing_tau_s: 0.12     # EMA time constant for dx, dy and box area (0 = no smoothing)
+  deadzone_enter: 0.10      # |offset| at or below this turns `aligned` on
+  deadzone_exit: 0.14       # |offset| above this turns `aligned` off again
+
+distance:
+  hysteresis: 0.15          # relative margin around each threshold before the hint changes
+  # Fraction of the frame the box fills. `default` is required; add per-label entries as needed.
+  thresholds:
+    default: {near: 0.05, in_reach: 0.20}
+    cup: {near: 0.05, in_reach: 0.20}
+
+summary:
+  min_interval_s: 2.0       # minimum gap between two utterances
+  settle_s: 0.4             # new content must be stable this long before it is spoken
+  center_band: 0.10         # per-axis offset at or below this is not mentioned
+  slight_band: 0.35         # offsets at or below this are "slightly" left/right/up/down
+  band_hysteresis: 0.15     # relative margin around both bands before the wording changes
+
+transport:
+  vision_pub: tcp://127.0.0.1:5555     # this module binds here
+  pressure_sub: tcp://127.0.0.1:5556   # M2: pressure bridge or mock binds here
+  command_sub: tcp://127.0.0.1:5557    # the console bridge (../bridge) binds here; later also voice
+  robot_sub: tcp://127.0.0.1:5558      # later: arm controller binds here
+  send_hwm: 20              # per-subscriber send queue; a stuck subscriber never holds more than this
+
+watchdog:
+  stall_timeout_s: 0.5      # no fresh message for this long => publish `degraded`
+  heartbeat_s: 0.5          # repeat `degraded` at this period while stalled
+
+overlay:
+  enabled: true
+  max_width: 960            # the debug window is downscaled to this width
+
+# The camera picture for the web console, as MJPEG over HTTP at http://<host>:<port>/stream.
+# The console cannot open the camera itself while this module holds it, so the frames come from here.
+# They are the frames the detector saw (oriented, without the debug drawing). Nothing is encoded
+# while no one is watching.
+stream:
+  enabled: true
+  host: 127.0.0.1           # this computer only. Any other address shows the camera to the network.
+  port: 8766                # 0 = any free port (the address is logged at startup)
+  max_width: 960            # wider frames are downscaled before encoding
+  jpeg_quality: 75          # 1..100; lower is smaller and blockier
+  max_fps: 30               # at most this many pictures per second are encoded
+
+logging:
+  interval_s: 2.0           # period of the FPS / latency log line
