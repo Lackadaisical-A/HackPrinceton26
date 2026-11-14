@@ -9,6 +9,10 @@ on:
     paths: ['frontend/**', '.github/workflows/frontend.yml']
   workflow_dispatch:
 
+# Read-only token: this workflow uses no secrets and never writes to the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: frontend-${{ github.ref }}
   cancel-in-progress: true

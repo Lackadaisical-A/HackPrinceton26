@@ -35,6 +35,17 @@ More scripts: `npm run check` (typecheck, lint and tests in one go), `npm run te
 on the Windows laptop while editing on a Mac), and `npm run demo` (production build, served at
 http://localhost:4173 and opened in the browser).
 
+### Installing safely
+
+- Use `npm ci`, not `npm install`. It installs exactly the versions in `package-lock.json`, which
+  were audited (`npm audit`, `npm audit signatures`: 0 vulnerabilities, all signatures valid) on
+  14 November 2026.
+- `.npmrc` sets `ignore-scripts=true`, so no package's install script ever runs. That is how most
+  npm malware gets onto a machine. The app needs none.
+- Adding a package: check the exact name on npmjs.com first (lookalikes of Vite and Tailwind
+  plugins were published as malware in 2026), prefer the official scopes (`@vitejs/*`,
+  `@tailwindcss/*`), and avoid versions published in the last few days.
+
 ### Demo on the Windows laptop
 
 1. Install Node 22 LTS from https://nodejs.org (the Windows installer; the defaults are fine).
