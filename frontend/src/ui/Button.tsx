@@ -46,7 +46,8 @@ export function Button({
       aria-pressed={pressed}
       className={cx(
         'inline-flex shrink-0 items-center justify-center rounded-sm font-medium whitespace-nowrap select-none',
-        'transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-45',
+        'transition-[color,background-color,border-color,transform,box-shadow] duration-150 ease-out',
+        'enabled:active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45',
         VARIANTS[variant],
         SIZES[size],
         className,

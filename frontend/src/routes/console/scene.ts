@@ -11,17 +11,17 @@ let backdrop: { w: number; h: number; fill: CanvasGradient } | null = null
 function bench(ctx: CanvasRenderingContext2D, w: number, h: number): CanvasGradient {
   if (!backdrop || backdrop.w !== w || backdrop.h !== h) {
     const fill = ctx.createRadialGradient(w / 2, h * 0.55, h * 0.1, w / 2, h * 0.55, Math.hypot(w, h) * 0.62)
-    fill.addColorStop(0, '#26332f')
-    fill.addColorStop(1, '#0c1412')
+    fill.addColorStop(0, '#33213a')
+    fill.addColorStop(1, '#150a19')
     backdrop = { w, h, fill }
   }
   return backdrop.fill
 }
 
-const BODY = '#8d9f98'
-const LIGHT = '#bccac4'
-const DARK = '#55655f'
-const SHADE = 'rgb(9 16 14 / 0.22)'
+const BODY = '#a493a6'
+const LIGHT = '#d3c6d4'
+const DARK = '#62506a'
+const SHADE = 'rgb(28 11 33 / 0.22)'
 
 function drawObject(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, bw: number, bh: number): void {
   const cx = x + bw / 2
@@ -141,17 +141,17 @@ function drawJaws(ctx: CanvasRenderingContext2D, w: number, h: number, openPerce
     ctx.lineTo(cx + side * (gapTip + thickTip), tipY - h * 0.012)
     ctx.lineTo(cx + side * (gapNear + thickNear), h + 2)
     ctx.closePath()
-    ctx.fillStyle = '#1f2a27'
+    ctx.fillStyle = '#2a1c30'
     ctx.fill()
     ctx.lineWidth = 1
-    ctx.strokeStyle = '#3f4e49'
+    ctx.strokeStyle = '#4a3a52'
     ctx.stroke()
     // The pad on the inner face.
     ctx.beginPath()
     ctx.moveTo(cx + side * gapNear, h + 2)
     ctx.lineTo(cx + side * gapTip, tipY)
     ctx.lineWidth = Math.max(2, w * 0.006)
-    ctx.strokeStyle = '#5a6a64'
+    ctx.strokeStyle = '#66566c'
     ctx.stroke()
   }
 }
@@ -168,7 +168,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, f
   const horizon = h * (0.2 - lift * 0.0035)
   const vanishX = w * (0.5 - pan * 0.006)
   ctx.lineWidth = 1
-  ctx.strokeStyle = 'rgb(236 244 240 / 0.055)'
+  ctx.strokeStyle = 'rgb(251 242 248 / 0.055)'
   ctx.beginPath()
   for (let i = -6; i <= 6; i++) {
     ctx.moveTo(vanishX, horizon)
@@ -180,7 +180,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, f
     ctx.lineTo(w, y)
   }
   ctx.stroke()
-  ctx.fillStyle = 'rgb(9 16 14 / 0.5)'
+  ctx.fillStyle = 'rgb(28 11 33 / 0.5)'
   ctx.fillRect(0, 0, w, Math.max(0, horizon))
 
   if (frame.box) {
@@ -190,7 +190,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, f
   drawJaws(ctx, w, h, frame.joints[5])
 
   if (dimmed) {
-    ctx.fillStyle = 'rgb(9 16 14 / 0.6)'
+    ctx.fillStyle = 'rgb(28 11 33 / 0.6)'
     ctx.fillRect(0, 0, w, h)
   }
 }

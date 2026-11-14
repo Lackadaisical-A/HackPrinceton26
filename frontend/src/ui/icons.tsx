@@ -28,9 +28,10 @@ function Svg({ size = 16, children, ...rest }: IconProps & { children: ReactNode
 export function IconMark({ size = 20, ...rest }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false" {...rest}>
-      <rect width="32" height="32" rx="7" fill="var(--window)" />
-      <path d="M7 9h5.5v14H7zM19.5 9H25v14h-5.5z" fill="var(--window-ink)" />
-      <circle cx="16" cy="16" r="3" fill="var(--touch-400)" />
+      {/* Operator and robot as two circles; the shared lens is where they connect. */}
+      <circle cx="12" cy="16" r="9" fill="var(--touch-400)" />
+      <circle cx="20" cy="16" r="9" fill="var(--touch-200)" />
+      <path d="M16 8.6a9 9 0 0 1 0 14.8a9 9 0 0 1 0-14.8z" fill="var(--touch-600)" />
     </svg>
   )
 }

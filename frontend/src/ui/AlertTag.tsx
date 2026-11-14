@@ -35,7 +35,7 @@ export function AlertTag({ level, text, active = true, onWindow = false, classNa
   return (
     <span
       className={cx(
-        'inline-flex min-h-6 items-center gap-1.5 rounded-xs border px-1.5 py-0.5 text-xs font-semibold',
+        'pop-in inline-flex min-h-6 items-center gap-1.5 rounded-xs border px-1.5 py-0.5 text-xs font-semibold',
         fill,
         className,
       )}

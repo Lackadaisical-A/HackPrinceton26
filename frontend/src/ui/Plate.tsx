@@ -16,7 +16,8 @@ export interface PlateProps {
 export function Plate({ title, note, aside, className, bodyClassName, children }: PlateProps) {
   const id = useId()
   return (
-    <section aria-labelledby={id} className={cx('min-w-0 rounded-lg border border-rule bg-plate', className)}>
+    <section aria-labelledby={id} className={cx('min-w-0 rounded-lg border border-rule bg-plate transition-[border-color,box-shadow] duration-200 ease-out',
+        'hover:border-touch-200 hover:shadow-[0_6px_20px_-12px_rgb(94_17_112/0.35)]', className)}>
       <header className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2.5 pb-2">
         <h2 id={id} className="text-sm font-semibold text-ink">
           {title}

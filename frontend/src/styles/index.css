@@ -3,35 +3,37 @@
 /*
  * PAUL design tokens.
  *
- * A light instrument panel in pale control-room green, with the camera feed as the one dark
- * window. Indigo belongs to the touch channel only. Amber and red appear only for abnormal
+ * A quiet near-white instrument panel, with the camera feed as the one dark plum window. The
+ * blush-to-plum ramp belongs to the touch channel. Amber and red appear only for abnormal
  * states and always travel with a shape and a label.
  *
  * Raw values live on :root so canvas renderers can read them (see render/theme.ts) and so a
  * second theme can be added later by overriding this block.
  */
 :root {
-  --panel: #d8e8e1;
-  --plate: #ebf5f0;
-  --well: #cbdcd4;
-  --rule: #b0c3ba;
-  --rule-strong: #798b82;
+  /* Brand palette: plum #8E1EA2, orchid #C654C3, pink #ED96D7, blush #FFC0DE.
+   * The page stays a quiet near-white; the brand hues are kept for the touch channel and focus. */
+  --panel: #faf5f8;
+  --plate: #fffdfe;
+  --well: #f3e8ef;
+  --rule: #e6d6e1;
+  --rule-strong: #8c7586;
 
-  --ink: #14211d;
-  --ink-2: #3c4c47;
-  --ink-3: #556661;
+  --ink: #2a1030;
+  --ink-2: #4e3654;
+  --ink-3: #655069;
 
-  --window: #09100e;
-  --window-ink: #ecf4f0;
-  --window-ink-2: #afbbb5;
+  --window: #1c0b21;
+  --window-ink: #fbf2f8;
+  --window-ink-2: #c9b3cc;
 
-  --touch-100: #e5e6fc;
-  --touch-200: #c8c9f5;
-  --touch-300: #9da1ea;
-  --touch-400: #7b81df;
-  --touch-500: #575bcb;
-  --touch-600: #3a3eaa;
-  --touch-700: #22277b;
+  --touch-100: #fff0f7;
+  --touch-200: #ffc0de;
+  --touch-300: #ed96d7;
+  --touch-400: #c654c3;
+  --touch-500: #a93ab3;
+  --touch-600: #8e1ea2;
+  --touch-700: #5e1170;
 
   --caution: #f3b01d;
   --caution-ink: #713f00;
@@ -135,7 +137,7 @@
   }
 
   dialog::backdrop {
-    background: rgb(9 16 14 / 0.45);
+    background: rgb(28 11 33 / 0.45);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -185,4 +187,124 @@
 
 @utility rec-breathe {
   animation: rec-breathe 1.6s ease-in-out infinite;
+}
+
+/*
+ * Motion. Everything here is short and settles quickly: things arrive, respond to the hand,
+ * and then hold still so the live data stays the thing that moves. Reduced motion (above)
+ * collapses all of it to an instant.
+ */
+@theme {
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+    background-color: var(--touch-100);
+  }
+  40% {
+    opacity: 1;
+    transform: none;
+    background-color: var(--touch-100);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* A screen or panel arriving. `--i` staggers siblings by 45 ms each. */
+@utility rise-in {
+  animation: rise-in 420ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+/* Children of a grid arrive one after another. */
+@utility stagger {
+  & > * {
+    animation: rise-in 420ms var(--ease-out) both;
+  }
+  & > :nth-child(2) {
+    animation-delay: 45ms;
+  }
+  & > :nth-child(3) {
+    animation-delay: 90ms;
+  }
+  & > :nth-child(4) {
+    animation-delay: 135ms;
+  }
+  & > :nth-child(5) {
+    animation-delay: 180ms;
+  }
+  & > :nth-child(6) {
+    animation-delay: 225ms;
+  }
+  & > :nth-child(n + 7) {
+    animation-delay: 270ms;
+  }
+}
+
+@utility pop-in {
+  animation: pop-in 260ms var(--ease-out) both;
+}
+
+/* A new row slides in with a brief blush, so the eye catches what just happened. */
+@utility row-in {
+  animation: row-in 900ms var(--ease-out) both;
+}
+
+/* A status dot with a ring that ripples outward: the link is alive. */
+@utility live-dot {
+  position: relative;
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: currentColor;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    animation: live-ping 1.8s var(--ease-out) infinite;
+  }
 }
