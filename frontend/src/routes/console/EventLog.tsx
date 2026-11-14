@@ -29,7 +29,7 @@ export function EventLog() {
           {events.slice(0, SHOWN).map((event) => (
             <li
               key={event.id}
-              className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-x-3 border-t border-rule py-1.5 first:border-t-0 sm:grid-cols-[4.5rem_5.25rem_minmax(0,1fr)]"
+              className="row-in grid grid-cols-[4.75rem_minmax(0,1fr)] gap-x-3 border-t border-rule py-1.5 first:border-t-0 sm:grid-cols-[4.5rem_5.25rem_minmax(0,1fr)]"
             >
               <span className="flex flex-col sm:contents">
                 <time className="num text-xs leading-5 text-ink-2">{timeOfDay(event.at)}</time>

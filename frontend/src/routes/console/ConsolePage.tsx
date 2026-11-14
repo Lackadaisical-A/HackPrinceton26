@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { ArmbandPanel } from './ArmbandPanel'
 import { ArmPanel } from './ArmPanel'
 import { CameraView } from './CameraView'
@@ -17,27 +18,27 @@ export default function ConsolePage() {
       <h1 className="sr-only">Console</h1>
       <div className="grid gap-3 md:gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(23rem,1fr)] lg:items-start">
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
-          <div className="order-1 min-w-0 lg:order-none">
+          <div className="rise-in order-1 min-w-0 lg:order-none" style={{ '--i': 0 } as CSSProperties}>
             <CameraView />
           </div>
-          <div className="order-2 min-w-0 lg:order-none">
+          <div className="rise-in order-2 min-w-0 lg:order-none" style={{ '--i': 1 } as CSSProperties}>
             <TaskPanel />
           </div>
-          <div className="order-3 min-w-0 lg:order-none">
+          <div className="rise-in order-3 min-w-0 lg:order-none" style={{ '--i': 2 } as CSSProperties}>
             <TrialBar />
           </div>
-          <div className="order-7 min-w-0 lg:order-none">
+          <div className="rise-in order-7 min-w-0 lg:order-none" style={{ '--i': 3 } as CSSProperties}>
             <EventLog />
           </div>
         </div>
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
-          <div className="order-4 min-w-0 lg:order-none">
+          <div className="rise-in order-4 min-w-0 lg:order-none" style={{ '--i': 1 } as CSSProperties}>
             <TouchLink />
           </div>
-          <div className="order-5 min-w-0 lg:order-none">
+          <div className="rise-in order-5 min-w-0 lg:order-none" style={{ '--i': 2 } as CSSProperties}>
             <ArmPanel />
           </div>
-          <div className="order-6 min-w-0 lg:order-none">
+          <div className="rise-in order-6 min-w-0 lg:order-none" style={{ '--i': 3 } as CSSProperties}>
             <ArmbandPanel />
           </div>
         </div>

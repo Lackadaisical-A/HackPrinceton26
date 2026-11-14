@@ -1,5 +1,6 @@
 import { useRef, type KeyboardEvent } from 'react'
 import { cx } from './cx'
+import { useIndicator } from './useIndicator'
 
 export interface SegmentedProps<T extends string> {
   /** Names the group for assistive technology. */
@@ -14,6 +15,7 @@ export interface SegmentedProps<T extends string> {
 /** A single choice from a few options, all visible at once. Arrow keys move the selection. */
 export function Segmented<T extends string>({ label, value, options, onChange, disabled, className }: SegmentedProps<T>) {
   const group = useRef<HTMLDivElement | null>(null)
+  const thumb = useIndicator(group, '[aria-checked="true"]', value)
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const step =
@@ -32,8 +34,10 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
       role="radiogroup"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className={cx('inline-flex max-w-full flex-wrap gap-0.5 rounded-sm border border-rule-strong bg-well p-0.5', className)}
+      className={cx('relative isolate inline-flex max-w-full flex-wrap gap-0.5 rounded-sm border border-rule bg-well p-[3px] shadow-[inset_0_1px_2px_rgb(42_16_48/0.06)]', className)}
     >
+      {/* The selection is a thumb that slides between options. */}
+      <span aria-hidden="true" className="absolute top-[3px] bottom-[3px] left-0 -z-10 rounded-xs bg-ink shadow-[0_2px_6px_-2px_rgb(42_16_48/0.5)]" style={thumb} />
       {options.map((option) => {
         const selected = option.value === value
         return (
@@ -47,9 +51,9 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cx(
-              'h-8 rounded-xs px-2.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 md:h-7',
+              'h-8 rounded-xs px-3 text-sm font-semibold whitespace-nowrap transition-colors duration-200 md:h-7',
               'disabled:cursor-not-allowed disabled:opacity-50',
-              selected ? 'bg-ink text-plate' : 'text-ink-2 hover:text-ink',
+              selected ? 'text-plate' : 'text-ink-2 hover:text-ink',
             )}
           >
             {option.label}

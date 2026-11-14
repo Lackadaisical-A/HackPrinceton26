@@ -11,8 +11,8 @@ import type { BBox, VisionMessage } from '../../telemetry/contracts'
  * conventions follow the vision module's own debug overlay (paul_vision/overlay.py).
  */
 
-const HALO = 'rgb(9 16 14 / 0.6)'
-const MARK = '236 244 240'
+const HALO = 'rgb(28 11 33 / 0.6)'
+const MARK = '251 242 248'
 
 /** Display state carried between frames, so the box moves smoothly between 30 Hz messages. */
 export interface OverlayMemory {
@@ -159,7 +159,7 @@ export function drawOverlay(
   const tagY = y1 - tagH - 5 >= 4 ? y1 - tagH - 5 : y1 + 5
   ctx.beginPath()
   ctx.roundRect(tagX, tagY, tagW, tagH, 2)
-  ctx.fillStyle = 'rgb(9 16 14 / 0.82)'
+  ctx.fillStyle = 'rgb(28 11 33 / 0.82)'
   ctx.fill()
   ctx.fillStyle = `rgb(${MARK})`
   ctx.textBaseline = 'middle'

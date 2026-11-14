@@ -136,7 +136,7 @@ export default function TrialsPage() {
       {trials.length === 0 ? (
         <NoTrials onLoadSample={loadSample} />
       ) : (
-        <div className="flex flex-col gap-3 md:gap-4">
+        <div className="stagger flex flex-col gap-3 md:gap-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span aria-hidden="true" className="text-sm font-medium text-ink-2">
               Data shown

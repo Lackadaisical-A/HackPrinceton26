@@ -13,7 +13,7 @@ export default function SignalsPage() {
       <PageHeader title="Signals">
         Choose where the data comes from, check what is arriving, and look up the message formats this app expects.
       </PageHeader>
-      <div className="grid grid-cols-1 items-start gap-3 md:gap-4 min-[1100px]:grid-cols-2">
+      <div className="stagger grid grid-cols-1 items-start gap-3 md:gap-4 min-[1100px]:grid-cols-2">
         <SourcePlate />
         <div className="grid min-w-0 grid-cols-1 gap-3 md:gap-4">
           <SimulatorTestsPlate />

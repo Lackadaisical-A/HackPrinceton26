@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Outlet } from 'react-router'
+import { Outlet, useLocation } from 'react-router'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { useShortcuts } from './shortcuts'
 import { TopBar } from './TopBar'
@@ -10,6 +10,7 @@ export function Shell() {
   const openHelp = useCallback(() => setHelpOpen(true), [])
   const closeHelp = useCallback(() => setHelpOpen(false), [])
   useShortcuts(openHelp)
+  const { pathname } = useLocation()
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -23,7 +24,10 @@ export function Shell() {
       </button>
       <TopBar onHelp={openHelp} />
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1680px] flex-1 p-3 outline-none md:p-4">
-        <Outlet />
+        {/* Keyed by route so each screen plays its entrance when you switch to it. */}
+        <div key={pathname} className="rise-in">
+          <Outlet />
+        </div>
       </main>
       <ShortcutsDialog open={helpOpen} onClose={closeHelp} />
     </div>

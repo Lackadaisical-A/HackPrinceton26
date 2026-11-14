@@ -42,7 +42,7 @@ export function Switch({ checked, onChange, label, tone = 'ink', disabled, descr
       >
         <span
           className={cx(
-            'absolute top-0.5 left-0.5 size-[1.125rem] rounded-full transition-transform duration-150 ease-out',
+            'absolute top-0.5 left-0.5 size-[1.125rem] rounded-full transition-[transform,background-color] duration-250 ease-spring',
             checked ? 'translate-x-5 bg-plate' : 'bg-ink-2',
           )}
         />
