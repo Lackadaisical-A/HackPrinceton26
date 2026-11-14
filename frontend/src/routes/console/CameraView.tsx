@@ -17,6 +17,7 @@ import { cx } from '../../ui/cx'
 import { IconWarning } from '../../ui/icons'
 import { Readout } from '../../ui/Readout'
 import { useCameraStream } from './cameraStream'
+import { CameraSourceSelector } from './CameraSourceSelector'
 import { drawOverlay, newOverlayMemory } from './overlay'
 import { drawScene } from './scene'
 
@@ -133,6 +134,8 @@ export function CameraView() {
   const usable = vision.state === 'ok'
 
   return (
+    <>
+    <CameraSourceSelector url={cameraUrl} live={live} />
     <section
       aria-label="Wrist camera"
       className="relative w-full overflow-hidden rounded-lg bg-window text-window-ink max-sm:!aspect-[4/3]"
@@ -232,5 +235,6 @@ export function CameraView() {
         </div>
       </div>
     </section>
+    </>
   )
 }

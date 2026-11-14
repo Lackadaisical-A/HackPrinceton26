@@ -1,5 +1,42 @@
 # PAUL console (frontend)
 
+Launch URLs can select live data automatically, for example
+`http://localhost:5173/?source=live&wsUrl=ws://127.0.0.1:8765&cameraUrl=http://127.0.0.1:8766/stream`.
+Potentiometer telemetry displays a separate control-input panel; target previews
+without measured robot feedback are labeled explicitly.
+
+With live data, **Camera source** above the video lists connected cameras by name.
+Choose one to switch both the displayed feed and computer vision input; **Refresh**
+rescans attached devices. The active selection changes only after a frame arrives,
+and a failed switch keeps the previous camera. Choices last until vision restarts.
+The chooser uses `/sources` and `/source` on the configured MJPEG server, including
+custom ports. It needs the updated vision service and a local console origin
+(`localhost` or `127.0.0.1`). Vision video recording disables switching.
+
+Verify the chooser with `uv run scripts/check_camera_sources.py --url http://127.0.0.1:5173`
+against a running frontend. Its default checks mock camera control and never open
+hardware. `--live-stream http://127.0.0.1:18766/stream` additionally switches the
+two attached cameras on this machine and restores the Innomaker robot camera.
+
+The Arm panel uses the existing SO-101 URDF and its 13 STL meshes from
+`../so101_sim/model`, rendered with Three.js and `urdf-loader`. Drag to orbit,
+scroll/pinch to zoom, and use **Reset view** to restore the camera. It follows
+`robot.pos`: five joint angles in degrees and gripper 0–100 mapped to its URDF
+travel. Model angles respect the URDF limits. These are visualization transforms,
+not motor commands. Physical mounting/zero alignment still needs a hardware check.
+
+Without telemetry it labels a reference pose; when telemetry stops it holds the
+last pose with a stale-data label. Pot previews and simulator poses are labeled.
+Rendering pauses off screen and when the tab is hidden; stationary poses render
+only on changes. Assets are packaged into the production build, with no CDN.
+Build from this repository, keeping `so101_sim/model` alongside `frontend`.
+Model provenance is documented in `public/notices/SO101-SOURCE.txt`; the model's Apache 2.0
+license is also shipped at `public/notices/SO101-LICENSE.txt`.
+
+After `npm run build`, run `uv run scripts/check_arm_3d.py` from `frontend` for
+headless Chrome checks of actual mesh loading, articulation, stale-data handling,
+orbit/reset, mobile layout, and missing-mesh fallback. Chrome must be installed.
+
 The operator's web app for PAUL: one screen that shows what the wrist camera sees, what the
 gripper pads feel, what the armband is told to play, and where the arm is, plus the tools to run
 and compare trials with and without haptic feedback.
@@ -62,7 +99,8 @@ the macOS one.
 ### Continuous integration and sharing
 
 `.github/workflows/frontend.yml` runs typecheck, lint, tests and the build on **macOS and Windows**
-for every push and pull request that touches `frontend/`. It does not deploy anything.
+for every push and pull request that touches `frontend/` or `so101_sim/model/`.
+It does not deploy anything.
 
 To share a public copy (it runs on the simulator), run `npm run build` and drag the `dist` folder
 onto https://app.netlify.com/drop. Repeat to update it.
@@ -154,7 +192,7 @@ command {"t":1731542400.2,"type":"select_target","label":"pill bottle"}
 | `vision`   | contract     | 30 Hz | `computer_vision`, ZMQ port 5555       |
 | `pressure` | contract     | 50 Hz | pressure bridge, ZMQ port 5556         |
 | `imu`      | **proposed** | 50 Hz | BNO085 over serial                     |
-| `robot`    | **proposed** | 30 Hz | arm controller, ZMQ port 5558          |
+| `robot`    | contract     | 10 Hz | pot / arm controller, ZMQ port 5558    |
 | `haptics`  | **proposed** | 50 Hz | haptics layer (DRV2605L drivers)       |
 | `command`  | mixed        | –     | sent by this app                       |
 
@@ -261,11 +299,12 @@ These were chosen so the screens could be built. Most live in `src/config.ts`.
 
 ## What has not
 
-- **No arm, no pads, no armband.** Only `vision` has come from a live publisher. `pressure`, `imu`,
-  `robot` and `haptics` have only ever come from the simulator.
-- **The wrist camera.** It was not plugged in during the live check, so the picture was the
-  laptop's built-in camera. That camera delivered between 10 and 30 frames a second from one run
-  to the next; at 10 the console shows "Vision rate low", which is correct.
+- **Physical arm, pads, and armband.** The robot publisher is implemented and its labeled
+  preview was tested through the real relay. Physical servo feedback still needs a hardware
+  session. `pressure`, `imu`, and `haptics` have only come from the simulator in these tests.
+- **Camera mounting/orientation.** The USB Innomaker robot camera is now verified on index 0;
+  its live image and stream were checked. Directional alignment on the mounted arm still needs
+  a physical check. Index 1 is this computer's integrated camera.
 - The live check was automated. Nobody has watched the live picture in an ordinary browser window
   for longer than a few minutes, or judged how well the overlay stays on a moving object.
 - Only Chrome was used. Firefox, Safari and real phones are untested.

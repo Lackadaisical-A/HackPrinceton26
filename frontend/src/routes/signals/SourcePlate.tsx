@@ -145,9 +145,9 @@ export function SourcePlate() {
         <ol className="mt-2 flex max-w-[62ch] list-decimal flex-col gap-1.5 pl-5">
           <li>
             Vision, in <span className="num">computer_vision/</span>, which watches the wrist camera and serves its
-            picture: <span className="num break-all">uv run python -m paul_vision --source wrist</span>. With no
-            wrist camera plugged in, <span className="num">--source 0</span> uses this computer’s first camera,
-            usually the built-in one.
+            picture: <span className="num break-all">uv run python -m paul_vision --source wrist</span>.
+            Choose a connected device using <strong>Camera source</strong> above the Console's video.
+            Use <strong>Refresh</strong> after plugging in a camera.
           </li>
           <li>
             The bridge, in <span className="num">bridge/</span>, which passes the data to this page and commands back:{' '}

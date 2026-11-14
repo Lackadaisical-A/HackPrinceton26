@@ -179,6 +179,17 @@ describe('validateImu', () => {
 })
 
 describe('validateRobot', () => {
+  const control = { input: 'potentiometer', feedback: 'preview', enabled: false, input_fresh: true, target: [0, 0, 0, 0, 0, 50] }
+  it('accepts a dry-run preview without fabricated servo loads', () => {
+    expect(validateRobot({ ...example('robot'), load: null, control })).toBeNull()
+    expect(validateRobot({ ...example('robot'), control })).toBe('preview must not report measured load')
+  })
+  it('validates optional controller and slider feedback', () => {
+    expect(validateRobot({ ...example('robot'), load: null, control, slider: { pos: 20, target: 40 } })).toBeNull()
+    expect(validateRobot({ ...example('robot'), control: { ...control, enabled: 'yes' } })).toBe('invalid robot control state')
+    expect(validateRobot({ ...example('robot'), control: { ...control, target: [1] } })).toBe('invalid robot control state')
+    expect(validateRobot({ ...example('robot'), slider: { pos: NaN, target: null } })).toBe('invalid slider state')
+  })
   it('rejects a load outside -1 to 1', () => {
     expect(validateRobot({ ...example('robot'), load: [0.04, 1.4, 0.22, 0.08, 0.01, 0.12] })).toBe(
       'load must be six numbers from -1 to 1',

@@ -1,0 +1,6 @@
+SO-101 model: so101_new_calib.urdf and 13 referenced STL meshes.
+Source: TheRobotStudio SO-ARM100/SO101, generated from Onshape via onshape-to-robot.
+https://github.com/TheRobotStudio/SO-ARM100/tree/main/Simulation/SO101
+
+This frontend bundles the existing, unmodified model from this repository's
+so101_sim/model directory. See SO101-LICENSE.txt for its Apache 2.0 license.

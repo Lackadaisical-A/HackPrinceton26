@@ -6,8 +6,11 @@ import './styles/index.css'
 import { App } from './app/App'
 import { startDerive } from './app/derive'
 import { connect } from './app/runtime'
+import { useSettings } from './state/settings'
+import { launchSettings } from './state/launch'
 
 // The data layer lives for as long as the page does, so it starts here and not in a component.
+useSettings.getState().update(launchSettings(window.location.search))
 startDerive()
 connect()
 

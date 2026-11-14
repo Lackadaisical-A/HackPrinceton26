@@ -4,9 +4,9 @@ name: Frontend
 on:
   push:
     branches: [main]
-    paths: ['frontend/**', '.github/workflows/frontend.yml']
+    paths: ['frontend/**', 'so101_sim/model/**', '.github/workflows/frontend.yml']
   pull_request:
-    paths: ['frontend/**', '.github/workflows/frontend.yml']
+    paths: ['frontend/**', 'so101_sim/model/**', '.github/workflows/frontend.yml']
   workflow_dispatch:
 
 # Read-only token: this workflow uses no secrets and never writes to the repo.

@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { JOINTS, LIMITS } from '../../config'
 import { fixed, signed } from '../../lib/format'
 import { clamp } from '../../lib/math'
 import { schedule } from '../../render/scheduler'
-import type { Draw } from '../../render/useCanvas'
-import { useCanvas } from '../../render/useCanvas'
 import { alertsFor, useSession } from '../../state/session'
 import { bus } from '../../telemetry/bus'
 import { AlertRow } from '../../ui/AlertTag'
 import { Plate } from '../../ui/Plate'
-import { drawArm } from './armSchematic'
+import { usePolled } from '../signals/usePolled'
+
+const ArmModel = lazy(() => import('./ArmModel'))
 
 /** How often the numbers are rewritten. The markers move faster than this; text cannot be read faster. */
 const TEXT_EVERY_MS = 125
@@ -49,14 +49,14 @@ function JointRows() {
             return
           }
           const at = clamp((robot.pos[i] - joint.min) / (joint.max - joint.min), 0, 1)
-          const load = clamp(Math.abs(robot.load[i]), 0, 1)
+          const load = clamp(Math.abs(robot.load?.[i] ?? 0), 0, 1)
           marker.style.opacity = '1'
           marker.style.transform = `translateX(${((at - 1) * 100).toFixed(2)}%)`
           fill.style.transform = `scaleX(${load.toFixed(3)})`
           if (writeText) {
             positions[i].textContent =
               joint.unit === '%' ? `${robot.pos[i].toFixed(0)} %` : `${signed(robot.pos[i], 1)}°`
-            loads[i].textContent = fixed(load, 2)
+            loads[i].textContent = robot.load ? fixed(load, 2) : '—'
           }
         })
       },
@@ -123,22 +123,15 @@ function JointRows() {
 
 export function ArmPanel() {
   const alerts = useSession((s) => s.alerts)
-  const canvas = useCanvas(
-    useCallback<Draw>((ctx, w, h, nowMs) => drawArm(ctx, w, h, nowMs), []),
-    30,
-  )
+  const [feedback] = usePolled(() => bus.latest('robot')?.control?.feedback)
+  const preview = feedback === 'preview'
 
   return (
-    <Plate title="Arm" note="side view, schematic" aside={<AlertRow alerts={alertsFor(alerts, 'arm')} />} bodyClassName="@container">
-      <div className="grid items-center gap-x-5 gap-y-3 @lg:grid-cols-[11.5rem_minmax(0,1fr)]">
-        <canvas
-          ref={canvas}
-          className="block h-36 w-full @lg:h-40"
-          role="img"
-          aria-label="Side view of the arm in its current pose. The joint values are in the table."
-        />
-        <JointRows />
-      </div>
+    <Plate title={preview ? 'Arm target preview' : 'Arm'} note="SO-101 · 3D" aside={<AlertRow alerts={alertsFor(alerts, 'arm')} />} bodyClassName="@container">
+      <Suspense fallback={<div className="mb-3 flex h-80 items-center justify-center rounded-md bg-well text-sm text-ink-2" role="status">Loading SO-101 viewer…</div>}>
+        <ArmModel />
+      </Suspense>
+      <JointRows />
     </Plate>
   )
 }

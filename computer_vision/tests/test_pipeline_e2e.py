@@ -115,6 +115,27 @@ def runs_of(statuses):
 
 # --- Pipeline: frame in, message out ---
 
+def test_switching_camera_clears_previous_scene_before_processing_new_frame(cfg):
+    class SwitchingSource(FakeSource):
+        generation = 0
+
+        def read(self, timeout_s):
+            result = super().read(timeout_s)
+            if self._seq == 2:
+                self.generation = 1
+            return result
+
+    messages = []
+    class Publisher:
+        def publish(self, message):
+            messages.append(message)
+
+    run(cfg, SwitchingSource([0, 0]), FakeDetector(CUP_LEFT, []), Publisher())
+    assert messages[0]["status"] == "ok"
+    assert messages[1]["status"] == "no_target"
+    assert messages[1]["phase"] == "search"
+    assert messages[1]["target"] is None and messages[1]["guidance"] is None
+
 def test_no_detections_gives_no_target(cfg):
     result = Pipeline(cfg, FakeDetector([])).process(frame(1, 100.0))
     msg = result.message

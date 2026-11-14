@@ -6,8 +6,8 @@
  * the ZMQ-to-WebSocket bridge can relay frames without rewriting them.
  *
  * `vision`, `pressure` and the first three commands are defined by the vision module.
- * `imu`, `robot`, `haptics` and `set_haptics` are proposals made by this frontend: nothing
- * publishes them yet. See TOPIC_INFO below, and the Signals page, for which is which.
+ * `robot` is published by the pot controller (and can be reused by the IMU controller).
+ * `imu`, `haptics` and `set_haptics` remain proposals. See TOPIC_INFO below.
  */
 
 export const VISION_STATUSES = ['ok', 'no_target', 'low_confidence', 'degraded'] as const
@@ -70,13 +70,22 @@ export interface ImuMessage {
   q: [w: number, x: number, y: number, z: number]
 }
 
-/** Proposed. Joint order: see JOINTS in config.ts. */
+/** Joint order: see JOINTS in config.ts. Input method is independent of measured feedback. */
 export interface RobotMessage {
   t: number
   /** Degrees, except the gripper, which is 0 (closed) to 100 (open). */
   pos: number[]
-  /** Relative servo load, -1 to 1. */
-  load: number[]
+  /** Signed servo load / 1000, clamped to -1..1; null when unavailable or previewing. */
+  load: number[] | null
+  control?: {
+    input: 'potentiometer' | 'imu'
+    enabled: boolean
+    input_fresh: boolean
+    feedback: 'measured' | 'preview'
+    target: number[] | null
+  }
+  /** Optional seventh axis; never changes the six-joint array order. */
+  slider?: { pos: number; target: number | null }
 }
 
 /** Proposed. What the haptics layer is commanding, not what the wearer feels. */
@@ -144,9 +153,9 @@ export const TOPIC_INFO: Record<Topic, TopicInfo> = {
   },
   robot: {
     title: 'Arm joints',
-    standing: 'proposed',
-    rateHz: 30,
-    origin: 'arm controller, ZMQ port 5558',
+    standing: 'contract',
+    rateHz: 10,
+    origin: 'pot / arm controller, ZMQ port 5558 (measured feedback or labeled dry run)',
     example:
       'robot {"t":1731542400.15,"pos":[-12.4,31,44.5,28,3.2,62],"load":[0.04,0.31,0.22,0.08,0.01,0.12]}',
   },
@@ -231,7 +240,19 @@ export function validateRobot(m: unknown): string | null {
   if (!isObject(m)) return 'not an object'
   if (!isNumber(m.t)) return 't must be a number'
   if (!Array.isArray(m.pos) || m.pos.length !== 6 || !m.pos.every(isNumber)) return 'pos must be six numbers'
-  if (!numberList(m.load, 6, -1, 1)) return 'load must be six numbers from -1 to 1'
+  if (m.load !== null && !numberList(m.load, 6, -1, 1)) return 'load must be six numbers from -1 to 1'
+  if (m.control !== undefined) {
+    const c = m.control
+    if (!isObject(c) || !['potentiometer', 'imu'].includes(c.input as string)
+      || typeof c.enabled !== 'boolean' || typeof c.input_fresh !== 'boolean'
+      || !['measured', 'preview'].includes(c.feedback as string)
+      || (c.target !== null && (!Array.isArray(c.target) || c.target.length !== 6 || !c.target.every(isNumber)))) {
+      return 'invalid robot control state'
+    }
+    if (c.feedback === 'preview' && m.load !== null) return 'preview must not report measured load'
+  }
+  if (m.slider !== undefined && (!isObject(m.slider) || !isNumber(m.slider.pos)
+    || (m.slider.target !== null && !isNumber(m.slider.target)))) return 'invalid slider state'
   return null
 }
 

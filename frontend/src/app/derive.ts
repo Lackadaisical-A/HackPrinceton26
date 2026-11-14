@@ -70,6 +70,7 @@ export function startDerive(): () => void {
   })
 
   const offRobot = bus.on('robot', (message) => {
+    if (!message.load) return
     for (let i = 0; i < message.load.length; i++) {
       if (Math.abs(message.load[i]) >= LIMITS.loadCaution) loadHighJoint = i
     }

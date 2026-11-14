@@ -62,6 +62,8 @@ class Pipeline:
         self._guidance.reset()
         self._summarizer.reset()
         self._last_guidance = None
+        self._last_t = None
+        self._phase = PhaseMachine()
 
     def process(self, frame: Frame) -> FrameResult:
         # After a gap in the feed the scene may have changed completely: start over rather than
@@ -211,6 +213,7 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
     idle_ms = max(1, int(read_timeout_s * 1000 / 5))
     paused = False
     last_seq: int | None = None  # frames that passed while the model was loading are not counted as skipped
+    source_generation = getattr(source, "generation", 0)
     last: tuple[Frame, FrameResult] | None = None
     last_summary: str | None = None
     detector_failing = False
@@ -248,6 +251,11 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
 
             started = time.perf_counter()
             frame = source.read(read_timeout_s)
+            generation = getattr(source, "generation", 0)
+            if generation != source_generation:
+                pipeline.reset()
+                source_generation = generation
+                last_seq, last, last_summary = None, None, None
             if frame is None:
                 if source.ended:
                     log.info("source ended")

@@ -57,6 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Imported late so that --help and config errors do not wait for torch and OpenCV to load.
     from .app import Recorder, run
+    from .camera_control import CameraControl
     from .commands import CommandReceiver
     from .detector import create_detector
     from .overlay import OverlayWindow
@@ -67,7 +68,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     source = window = recorder = stream = commands = None
     try:
         try:
-            source = open_source(args.source if args.source is not None else cfg.source.default, cfg)
+            source_spec = args.source if args.source is not None else cfg.source.default
+            source = open_source(source_spec, cfg)
+            source = CameraControl(source, source_spec, cfg, allow_switch=not bool(args.record))
             log.info("source: %s", source.description)
             turned = cfg.camera.rotate_deg in (90, 270)
             frame_shape = (cfg.camera.width, cfg.camera.height) if turned else (cfg.camera.height, cfg.camera.width)
@@ -77,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             log.info("listening for topic 'command' from %s", commands.endpoint)
             if cfg.stream.enabled and not args.no_stream:
                 try:
-                    stream = FrameStream(cfg.stream).start()
+                    stream = FrameStream(cfg.stream, camera_control=source).start()
                 except OSError as exc:
                     # Guidance matters more than the picture, so this is not a reason to stop.
                     log.warning("no camera stream for the console: could not listen on %s:%d (%s). "

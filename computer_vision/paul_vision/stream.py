@@ -9,6 +9,7 @@ thread however many viewers there are, and nothing is encoded while no one is wa
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import socketserver
@@ -16,11 +17,16 @@ import threading
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from .config import StreamConfig
+
+if TYPE_CHECKING:
+    from .camera_control import CameraControl
 
 log = logging.getLogger(__name__)
 
@@ -39,8 +45,9 @@ def _host_name(header: str | None) -> str:
 class FrameStream:
     """Serves the newest frame to every connected viewer."""
 
-    def __init__(self, cfg: StreamConfig):
+    def __init__(self, cfg: StreamConfig, *, camera_control: CameraControl | None = None):
         self._cfg = cfg
+        self.camera_control = camera_control
         self._lock = threading.Lock()
         self._new_frame = threading.Condition(self._lock)  # wakes the encoder
         self._new_jpeg = threading.Condition(self._lock)   # wakes the viewers
@@ -212,6 +219,17 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         stream = self.server.stream
+        if urlsplit(self.path).path == "/sources":
+            if not self._api_allowed():
+                return
+            control = stream.camera_control
+            if control is None:
+                self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Camera selection is unavailable."})
+                return
+            if parse_qs(urlsplit(self.path).query).get("refresh") == ["1"]:
+                control.refresh()
+            self._json(HTTPStatus.OK, control.status())
+            return
         if not stream.host_allowed(self.headers.get("Host")):
             self._refuse(HTTPStatus.FORBIDDEN, "This stream answers only under its own address.")
             return
@@ -229,6 +247,74 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             return
         stream.feed(self.wfile)
+
+    def _api_allowed(self, *, require_origin: bool = False) -> bool:
+        if not self.server.stream.host_allowed(self.headers.get("Host")):
+            self._refuse(HTTPStatus.FORBIDDEN, "This stream answers only under its own address.")
+            return False
+        origin = self.headers.get("Origin")
+        if not origin and not require_origin:
+            return True
+        try:
+            parsed = urlsplit(origin or "")
+            allowed = (parsed.scheme in ("http", "https") and
+                       parsed.hostname in (*_LOOPBACK_NAMES, "::1") and
+                       parsed.username is None and parsed.password is None and
+                       not parsed.path and not parsed.query and not parsed.fragment)
+        except ValueError:
+            allowed = False
+        if not allowed:
+            self._refuse(HTTPStatus.FORBIDDEN, "Camera selection is available to the local console only.")
+        return allowed
+
+    def do_OPTIONS(self) -> None:
+        if urlsplit(self.path).path not in ("/sources", "/source"):
+            self._refuse(HTTPStatus.NOT_FOUND, "Unknown camera endpoint.")
+        elif self._api_allowed(require_origin=True):
+            self._json(HTTPStatus.NO_CONTENT, None)
+
+    def do_POST(self) -> None:
+        if urlsplit(self.path).path != "/source":
+            self._refuse(HTTPStatus.NOT_FOUND, "Unknown camera endpoint.")
+            return
+        if not self._api_allowed(require_origin=True):
+            return
+        control = self.server.stream.camera_control
+        if control is None:
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Camera selection is unavailable."})
+            return
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+            if self.headers.get_content_type() != "application/json" or not 0 < size <= 1024:
+                raise ValueError("Expected a small JSON request containing a camera id.")
+            payload = json.loads(self.rfile.read(size))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a camera id.")
+            control.select(payload.get("id"))
+        except (ValueError, UnicodeError) as exc:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        except RuntimeError as exc:
+            self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+            return
+        self._json(HTTPStatus.ACCEPTED, control.status())
+
+    def _json(self, status: HTTPStatus, payload: dict | None) -> None:
+        body = json.dumps(payload).encode("utf-8") if payload is not None else b""
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Vary", "Origin")
+            if self.headers.get("Origin"):
+                self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:
+            pass
 
     def _refuse(self, status: HTTPStatus, text: str) -> None:
         body = (text + "\n").encode("utf-8")

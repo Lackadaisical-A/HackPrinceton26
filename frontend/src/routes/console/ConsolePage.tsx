@@ -6,6 +6,9 @@ import { EventLog } from './EventLog'
 import { TaskPanel } from './TaskPanel'
 import { TouchLink } from './TouchLink'
 import { TrialBar } from './TrialBar'
+import { ControlInputPanel } from './ControlInputPanel'
+import { bus } from '../../telemetry/bus'
+import { usePolled } from '../signals/usePolled'
 
 /**
  * The operator's screen. Two columns on a wide display: what the arm sees and what is being
@@ -13,6 +16,7 @@ import { TrialBar } from './TrialBar'
  * columns dissolve and the panels follow one order, with the trial controls kept near the top.
  */
 export default function ConsolePage() {
+  const [potInput] = usePolled(() => bus.latest('robot')?.control?.input === 'potentiometer')
   return (
     <>
       <h1 className="sr-only">Console</h1>
@@ -39,7 +43,7 @@ export default function ConsolePage() {
             <ArmPanel />
           </div>
           <div className="rise-in order-6 min-w-0 lg:order-none" style={{ '--i': 3 } as CSSProperties}>
-            <ArmbandPanel />
+            {potInput ? <ControlInputPanel /> : <ArmbandPanel />}
           </div>
         </div>
       </div>
