@@ -150,8 +150,11 @@ export function drawOverlay(
     ctx.fill()
   }
 
-  // The label rides on the box's top edge, or inside it when the box touches the frame's top.
-  const text = `${target.label}  ${target.confidence.toFixed(2)}`
+  drawTag(ctx, w, `${target.label}  ${target.confidence.toFixed(2)}`, x1, y1)
+}
+
+/** A box's label: on its top edge, or inside it when the box touches the frame's top. */
+function drawTag(ctx: CanvasRenderingContext2D, w: number, text: string, x1: number, y1: number): void {
   ctx.font = `600 12px ${FONT_SANS}`
   const tagW = ctx.measureText(text).width + 12
   const tagH = 20
@@ -165,4 +168,26 @@ export function drawOverlay(
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
   ctx.fillText(text, tagX + 6, tagY + tagH / 2 + 0.5)
+}
+
+/** Two corners of a box being dragged, in fractions of the picture, in the order the pointer gave them. */
+export interface DragBox {
+  ax: number
+  ay: number
+  bx: number
+  by: number
+}
+
+/** The box the operator is drawing to teach vision a name. Dashed, so it never reads as a detection. */
+export function drawTagDraft(ctx: CanvasRenderingContext2D, w: number, h: number, box: DragBox, name: string): void {
+  const x1 = Math.min(box.ax, box.bx) * w
+  const y1 = Math.min(box.ay, box.by) * h
+  const x2 = Math.max(box.ax, box.bx) * w
+  const y2 = Math.max(box.ay, box.by) * h
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.setLineDash([6, 4])
+  ink(ctx, 2, 1, () => ctx.rect(x1, y1, x2 - x1, y2 - y1))
+  ctx.setLineDash([])
+  if (name) drawTag(ctx, w, name, x1, y1)
 }

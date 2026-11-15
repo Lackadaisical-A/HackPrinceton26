@@ -14,13 +14,14 @@ const ok = (patch: Partial<VisionMessage> = {}): VisionMessage => ({
   target: { track_id: 7, label: 'cup', source: 'yolo', bbox: [0.41, 0.3, 0.62, 0.58], confidence: 0.91 },
   guidance: { dx: -0.12, dy: 0.05, distance_hint: 'near', aligned: true },
   summary: null,
+  alert: null,
   ...patch,
 })
 
 const without = (status: 'no_target' | 'low_confidence' | 'degraded', patch: Partial<VisionMessage> = {}): VisionMessage =>
   ok({ status, target: null, guidance: null, ...patch })
 
-/** The watchdog's heartbeat: it always reports the search phase. */
+/** The watchdog's heartbeat, from a vision build that always reported the search phase. */
 const heartbeat = (patch: Partial<VisionMessage> = {}): VisionMessage => without('degraded', { phase: 'search', ...patch })
 
 const previous: VisionView = { state: 'ok', phase: 'carry', label: 'box', distance: 'in_reach', aligned: true }
@@ -120,7 +121,7 @@ describe('viewOf', () => {
     expect(viewOf(ok({ phase: 'place' }), 'late', previous).phase).toBe('place')
   })
 
-  it('keeps the previous phase during a degraded heartbeat, which always says search', () => {
+  it('keeps the previous phase during a degraded heartbeat, even one that says search', () => {
     expect(viewOf(heartbeat(), 'degraded', previous)).toEqual({
       state: 'degraded',
       phase: 'carry',

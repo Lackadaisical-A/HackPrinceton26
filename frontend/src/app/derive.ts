@@ -15,6 +15,8 @@ import { classifyVision, sameView, viewOf } from '../telemetry/vision'
 
 let trialPeak: number | null = null
 let gripHighSeen = false
+/** Vision repeats `alert: "dropped"` for about a second; the flag makes sure the 10 Hz tick sees it. */
+let droppedSeen = false
 let loadHighJoint: number | null = null
 let slowSinceMs: number | null = null
 let hapticsHoldUntilMs = 0
@@ -51,6 +53,7 @@ export function startDerive(): () => void {
     const store = session.getState()
     const state = classifyVision(message, 0, Date.now() / 1000)
     const view = viewOf(message, state, store.vision)
+    if (message.alert === 'dropped') droppedSeen = true
     if (!sameView(view, store.vision)) {
       if (view.phase !== store.vision.phase) store.log('phase', sentenceCase(view.phase))
       store.setVision(view)
@@ -97,6 +100,14 @@ export function startDerive(): () => void {
     else slowSinceMs = null
 
     const conditions: Condition[] = [
+      {
+        key: 'object-dropped',
+        level: 'warning',
+        where: 'camera',
+        text: 'Object may have dropped',
+        on: droppedSeen,
+        latch: true,
+      },
       {
         key: 'vision-lost',
         level: 'warning',
@@ -148,6 +159,7 @@ export function startDerive(): () => void {
       },
     ]
     gripHighSeen = false
+    droppedSeen = false
     loadHighJoint = null
 
     const update = tracker.update(conditions, now)
@@ -163,5 +175,6 @@ export function startDerive(): () => void {
     clearInterval(timer)
     tracker.clear()
     slowSinceMs = null
+    droppedSeen = false
   }
 }

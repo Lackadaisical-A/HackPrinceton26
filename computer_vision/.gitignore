@@ -10,10 +10,14 @@ models/
 *.ts
 *.npz
 
+# The operator's taught names (M4): pictures, embeddings and exports, local to each machine
+labels/
+
 # Local run output
 runs/
 snapshots/
 recordings/
+markers/
 
 # Test footage: the clips are large; sample_videos/README.md says where each one came from
 sample_videos/*

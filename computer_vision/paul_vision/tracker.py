@@ -4,9 +4,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from .aruco import SOURCE_ARUCO
 from .config import TrackerConfig
 from .geometry import center_distance, iou
 from .types import BBox, Detection, Track
+
+# Sources whose label is an identity, not a guess: a station marker's label is the id it decoded, so the pick
+# and the drop station are two places, never two views of one thing. The tracker owns this list because only
+# it acts on it: a track of such a source continues only with detections of its own label and is never
+# renamed. A detector that guesses its labels must stay out of it.
+IDENTITY_SOURCES: frozenset[str] = frozenset({SOURCE_ARUCO})
 
 
 @dataclass
@@ -28,6 +35,11 @@ class IouTracker:
     fade with the time constant `label_memory_s`, and the track changes label when another tally is
     `label_margin` ahead of its own. A confident view therefore outlasts a longer doubtful one, while
     a young track corrects a wrong first label within a frame or two.
+
+    Sources in `IDENTITY_SOURCES` (the station markers) are the exception: a detection continues only a
+    track with its own label, so a pick station never takes over the drop station's track (or its
+    `track_id`, which the target selector holds on to) when the two pass or swap places, and their
+    tracks keep the label they were created with.
     """
 
     def __init__(self, cfg: TrackerConfig):
@@ -38,6 +50,13 @@ class IouTracker:
     def reset(self) -> None:
         """Forget all tracks. IDs keep counting up, so an ID is never reused."""
         self._tracks = []
+
+    def forget_labels(self) -> None:
+        """Clear every track's label votes, keeping the tracks and their IDs. Used when the detector's class list
+        changes (a tag goes live or is removed): votes cast under the old list would otherwise hold a track on its
+        old label for up to label_memory_s, so each track takes its next detection's label instead."""
+        for state in self._tracks:
+            state.votes.clear()
 
     def update(self, detections: list[Detection], t: float) -> list[Track]:
         """Match this frame's detections to known tracks. Returns one Track per detection."""
@@ -59,6 +78,7 @@ class IouTracker:
                 (cost, ti, di)
                 for ti, s in enumerate(known) if ti not in used
                 for di, d in enumerate(detections) if di not in matched and d.source == s.source
+                and (d.label == s.label or s.source not in IDENTITY_SOURCES)
                 for cost in [measure(s.bbox, d.bbox)] if keep(cost)
             ]
 
@@ -83,6 +103,8 @@ class IouTracker:
         for label in state.votes:
             state.votes[label] *= fade
         state.votes[det.label] = state.votes.get(det.label, 0.0) + det.confidence
+        if state.source in IDENTITY_SOURCES:
+            return  # matching only gives such a track detections of its own label; never rename it
         # Only the label that just gained can have overtaken.
         if state.votes[det.label] > state.votes.get(state.label, 0.0) * (1.0 + self._cfg.label_margin):
             state.label = det.label

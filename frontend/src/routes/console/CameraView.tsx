@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { getSimulator } from '../../app/runtime'
+import { getSimulator, sendLabelCommand } from '../../app/runtime'
 import { LIMITS } from '../../config'
 import { sentenceCase, signed } from '../../lib/format'
 import type { Draw } from '../../render/useCanvas'
@@ -8,7 +8,8 @@ import { useCanvas } from '../../render/useCanvas'
 import { alertsFor, useSession, type VisionState } from '../../state/session'
 import { useSettings } from '../../state/settings'
 import { bus } from '../../telemetry/bus'
-import type { DistanceHint } from '../../telemetry/contracts'
+import type { BBox, DistanceHint } from '../../telemetry/contracts'
+import { nameProblem, normalizeName } from '../../telemetry/labels'
 import type { SimFrame } from '../../telemetry/sources/scenario'
 import { classifyVision } from '../../telemetry/vision'
 import { AlertRow } from '../../ui/AlertTag'
@@ -18,8 +19,9 @@ import { IconWarning } from '../../ui/icons'
 import { Readout } from '../../ui/Readout'
 import { useCameraStream } from './cameraStream'
 import { CameraSourceSelector } from './CameraSourceSelector'
-import { drawOverlay, newOverlayMemory } from './overlay'
+import { drawOverlay, drawTagDraft, newOverlayMemory, type DragBox } from './overlay'
 import { drawScene } from './scene'
+import { TagBar, TagLayer, type TagBarProps } from './TagBox'
 
 const LOST: Partial<Record<VisionState, { title: string; body: string }>> = {
   degraded: { title: 'Vision feed lost', body: 'Guidance is hidden until fresh frames arrive.' },
@@ -110,6 +112,60 @@ export function CameraView() {
   const memory = useRef(newOverlayMemory())
   const sceneFrame = useRef<SimFrame | null>(null)
 
+  // Teaching a name from a drawn box. Only live vision can learn one; the simulator has no detector.
+  const [tagText, setTagText] = useState('')
+  const [drawing, setDrawing] = useState(false)
+  const [tagNote, setTagNote] = useState<TagBarProps['note']>(null)
+  const draft = useRef<DragBox | null>(null)
+  const tagName = normalizeName(tagText)
+  const tagUnavailable =
+    linkState === 'open'
+      ? null
+      : simulated
+        ? 'Tagging needs live vision: the simulator has no detector.'
+        : 'Connect to the live bridge to tag objects.'
+  const isDrawing = drawing && tagUnavailable === null
+
+  const stopDrawing = useCallback((note: TagBarProps['note']) => {
+    draft.current = null
+    setDrawing(false)
+    setTagNote(note)
+  }, [])
+
+  const startDrawing = (): void => {
+    const problem = nameProblem(tagName)
+    if (problem) {
+      setTagNote({ text: problem, problem: true })
+      return
+    }
+    setDrawing(true)
+    setTagNote({ text: `Drag a box around ${tagName} on the picture. Esc cancels.`, problem: false })
+  }
+
+  const onBox = (box: BBox | null): void => {
+    if (!box) {
+      setTagNote({ text: 'That was a click, not a box. Drag from one corner of the object to the other.', problem: true })
+      return
+    }
+    const sent = sendLabelCommand({ type: 'tag_visual', name: tagName, bbox: box })
+    stopDrawing(
+      sent
+        ? { text: `Sent. Vision answers in the caption: “Learning ${tagName}.”, then “… is ready.”`, problem: false }
+        : { text: 'Not sent: the connection dropped.', problem: true },
+    )
+  }
+
+  useEffect(() => {
+    if (!isDrawing) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      stopDrawing(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isDrawing, stopDrawing])
+
   const draw = useCallback<Draw>(
     (ctx, w, h, nowMs, dtMs) => {
       const latest = bus.latest('vision')
@@ -123,8 +179,9 @@ export function CameraView() {
         ctx.clearRect(0, 0, w, h)
       }
       drawOverlay(ctx, w, h, latest, state === 'ok', memory.current, dtMs)
+      if (draft.current) drawTagDraft(ctx, w, h, draft.current, tagName)
     },
-    [simulated],
+    [simulated, tagName],
   )
   const canvas = useCanvas(draw)
 
@@ -233,8 +290,29 @@ export function CameraView() {
           {simulated && <Chip tone="window">Simulated scene</Chip>}
         </div>
       </div>
+
+      {isDrawing && (
+        <TagLayer
+          onDrag={(box) => {
+            draft.current = box
+          }}
+          onBox={onBox}
+        />
+      )}
     </section>
     <CameraSourceSelector url={cameraUrl} live={live} />
+    <TagBar
+      name={tagText}
+      onName={(text) => {
+        setTagText(text)
+        if (tagNote?.problem) setTagNote(null)
+      }}
+      drawing={isDrawing}
+      onDraw={startDrawing}
+      onCancel={() => stopDrawing(null)}
+      unavailable={tagUnavailable}
+      note={tagNote}
+    />
     </>
   )
 }

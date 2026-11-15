@@ -64,6 +64,12 @@ export const LIMITS = {
   alertHoldMs: 10_000,
 } as const
 
+/**
+ * Mirrors the labels section of computer_vision/config.yaml: max_name_chars, max_prompt_chars and min_box_side.
+ * Vision checks again and says why it refuses; these only stop the console sending what it would refuse.
+ */
+export const LABEL_LIMITS = { nameChars: 40, promptChars: 100, minBoxSide: 0.04 } as const
+
 /** Mirrors guidance.deadzone_enter / deadzone_exit in computer_vision/config.yaml. */
 export const DEADZONE = { enter: 0.1, exit: 0.14 } as const
 

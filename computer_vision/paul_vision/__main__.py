@@ -48,24 +48,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_cfg = dataclasses.replace(cfg.source, video_end=args.video_end) if args.video_end else cfg.source
         cfg = dataclasses.replace(cfg, detector=detector_cfg, source=source_cfg)
         validate(cfg)
-        if args.target_label and args.target_label not in cfg.detector.classes:
+        from .labels import LIBRARY_FILE, library_dir, read_tag_names
+        try:
+            tag_names = read_tag_names(library_dir(cfg))
+        except ValueError as exc:
+            raise ConfigError(f"the label library cannot be read: {exc}. Repair or delete "
+                              f"{library_dir(cfg) / LIBRARY_FILE}, or point labels.dir elsewhere") from exc
+        if args.target_label and args.target_label not in [*cfg.detector.classes, *tag_names]:
             raise ConfigError(f"--target-label {args.target_label!r} is not one of detector.classes "
-                              f"{cfg.detector.classes}")
+                              f"{cfg.detector.classes} or the tag names {tag_names}")
     except (ConfigError, OSError) as exc:
         log.error("configuration: %s", exc)
         return 2
 
     # Imported late so that --help and config errors do not wait for torch and OpenCV to load.
     from .app import Recorder, run
+    from .aruco import StationDetector, mirrors_picture
     from .camera_control import CameraControl
     from .commands import CommandReceiver
-    from .detector import create_detector
+    from .detector import CompositeDetector, create_detector, probe_hardware, resolve_profile
+    from .label_manager import LabelManager, prepare_startup
     from .overlay import OverlayWindow
+    from .gripper_load import GripperLoadReceiver, grip_level_of
+    from .pressure import ContactDetector, PressureReceiver
     from .sources import open_source
     from .stream import FrameStream
     from .transport import VisionPublisher
 
-    source = window = recorder = stream = commands = None
+    source = window = recorder = stream = commands = pressure = labels = None
     try:
         try:
             source_spec = args.source if args.source is not None else cfg.source.default
@@ -74,10 +84,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             log.info("source: %s", source.description)
             turned = cfg.camera.rotate_deg in (90, 270)
             frame_shape = (cfg.camera.width, cfg.camera.height) if turned else (cfg.camera.height, cfg.camera.width)
-            detector = create_detector(cfg.detector, frame_shape)
-            log.info("detector ready: %s", detector.description)
+            profile = resolve_profile(cfg.detector, *probe_hardware())
+            library, views = prepare_startup(cfg, profile)  # may rebuild the library or its export first
+            objects = create_detector(cfg.detector, frame_shape, profile=profile, views=views)
+            log.info("detector ready: %s", objects.description)
+            labels = LabelManager(cfg, objects, profile, library)
+            if cfg.stations.enabled:
+                stations = StationDetector(cfg.stations, mirrored=mirrors_picture(cfg.camera))
+                detector = CompositeDetector({"yolo": objects, "aruco": stations})
+                station_line = stations.description
+            else:
+                detector = objects
+                station_line = "off (stations.enabled: false): carry never reaches place by itself"
             commands = CommandReceiver(cfg.transport.command_sub)
-            log.info("listening for topic 'command' from %s", commands.endpoint)
+            log.info("listening for topic 'command' from %s", ", ".join(commands.endpoints))
+            if cfg.gripper_load.enabled:
+                pressure = GripperLoadReceiver(cfg.transport.robot_sub, cfg.gripper_load)
+                contacts = ContactDetector(cfg.gripper_load, level_of=grip_level_of)
+                log.info("listening for topic 'robot' (gripper load) from %s", pressure.endpoint)
+                grip_line = (f"grip:     gripper load from {pressure.endpoint} (while no measured load arrives, "
+                             "only search/approach, or set_phase)")
+            else:
+                pressure = PressureReceiver(cfg.transport.pressure_sub)
+                contacts = None  # run() uses the pads' ContactDetector(cfg.pressure)
+                log.info("listening for topic 'pressure' from %s", pressure.endpoint)
+                grip_line = (f"pressure: {pressure.endpoint} (while no pad data arrives, only search/approach, "
+                             "or set_phase)")
+            banner = [f"objects:  {objects.description}",
+                      f"stations: {station_line}",
+                      grip_line,
+                      f"commands: {', '.join(commands.endpoints)}",
+                      f"labels:   {len(library.tags)} tag(s) {[t.name for t in library.tags]} in "
+                      f"{library_dir(cfg)} (tag_visual, tag_text, untag)"]
+            width = max(len(line) for line in banner) + 4
+            log.warning("%s\n%s\n%s", "=" * width, "\n".join(f"  {line}" for line in banner), "=" * width)
             if cfg.stream.enabled and not args.no_stream:
                 try:
                     stream = FrameStream(cfg.stream, camera_control=source).start()
@@ -99,8 +139,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             metrics = run(cfg, source, detector, publisher, window=window, recorder=recorder,
                           max_frames=args.max_frames, preferred_label=args.target_label, commands=commands,
+                          pressure=pressure, contacts=contacts, labels=labels,
                           on_result=(lambda frame, _result: show(frame.image)) if show else None)
         finally:
+            labels.close()  # before the publisher: a change still running is stopped and dropped
             publisher.close()
         print(metrics.report())
         return 0
@@ -109,6 +151,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             stream.close()
         if commands is not None:
             commands.close()
+        if pressure is not None:
+            pressure.close()
         if recorder is not None:
             recorder.close()
         if window is not None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from collections.abc import Sequence
 
 import zmq
 
@@ -124,6 +125,9 @@ class VisionPublisher:
 
         watchdog = Watchdog(self._watchdog_cfg, clock.now())
         last_frame_id = 0
+        # A camera stall does not end a carry: the heartbeat repeats the last published phase. Its alert is always
+        # null, because an alert belongs to the frame that saw the drop and is held by the pipeline, not here.
+        last_phase = PHASE_SEARCH
         try:
             while True:
                 try:
@@ -139,6 +143,7 @@ class VisionPublisher:
                         log.info("vision feed recovered")
                     watchdog.feed(now)
                     last_frame_id = message["frame_id"]
+                    last_phase = message["phase"]
                     continue
                 beat = watchdog.poll(now)
                 if beat:
@@ -146,8 +151,8 @@ class VisionPublisher:
                         log.warning("no fresh vision message for %.2f s: publishing 'degraded'",
                                     self._watchdog_cfg.stall_timeout_s)
                     sock.send(encode(TOPIC_VISION, build_vision_message(
-                        t=now, frame_id=last_frame_id, status=STATUS_DEGRADED, phase=PHASE_SEARCH,
-                        summary=TEXT_DEGRADED if beat == 1 else None)))
+                        t=now, frame_id=last_frame_id, status=STATUS_DEGRADED, phase=last_phase,
+                        summary=TEXT_DEGRADED if beat == 1 else None, alert=None)))
         except Exception:
             log.exception("vision publisher thread crashed")
         finally:
@@ -156,19 +161,29 @@ class VisionPublisher:
 
 
 class Subscriber:
-    """Connects to a publisher and returns decoded (topic, payload) pairs.
+    """Connects to one or more publishers and returns decoded (topic, payload) pairs.
 
+    Several endpoints share one SUB socket, which fair-queues between them; each publisher binds its own port.
     conflate=True keeps only the newest message, which is what a real-time consumer (haptics) wants.
     """
 
-    def __init__(self, endpoint: str, topic: str = TOPIC_VISION, conflate: bool = False):
+    def __init__(self, endpoint: str | Sequence[str], topic: str = TOPIC_VISION, conflate: bool = False):
+        endpoints = [endpoint] if isinstance(endpoint, str) else list(endpoint)
+        if not endpoints:
+            raise ValueError("Subscriber needs at least one endpoint")
+        self.endpoints = endpoints
         self._ctx = zmq.Context()
         self._sock = self._ctx.socket(zmq.SUB)
-        if conflate:
-            self._sock.set(zmq.CONFLATE, 1)  # must be set before connect
-        self._sock.set(zmq.LINGER, 0)
-        self._sock.connect(endpoint)
-        self._sock.subscribe(f"{topic} ".encode("utf-8"))
+        try:
+            if conflate:
+                self._sock.set(zmq.CONFLATE, 1)  # must be set before connect
+            self._sock.set(zmq.LINGER, 0)
+            for e in endpoints:
+                self._sock.connect(e)
+            self._sock.subscribe(f"{topic} ".encode("utf-8"))
+        except BaseException:
+            self.close()  # a bad endpoint must not leave a context behind (ctx.term would wait for it at exit)
+            raise
 
     def recv(self, timeout_s: float) -> tuple[str, dict] | None:
         """The next message, or None if nothing arrives within the timeout."""

@@ -129,6 +129,19 @@ describe('validateVision', () => {
     expect(validateVision({ ...example('vision'), summary: 7 })).toBe('summary must be a string or null')
   })
 
+  it('accepts a drop alert, no alert, and a message from before alerts existed', () => {
+    expect(validateVision({ ...example('vision'), alert: 'dropped' })).toBeNull()
+    expect(validateVision({ ...noTarget(), alert: 'dropped' })).toBeNull() // independent of the status
+    expect(validateVision({ ...example('vision'), alert: null })).toBeNull()
+    const { alert: _, ...older } = example('vision')
+    expect(validateVision(older)).toBeNull()
+  })
+
+  it('rejects an alert it does not know', () => {
+    expect(validateVision({ ...example('vision'), alert: 'fell' })).toBe('unknown alert "fell"')
+    expect(validateVision({ ...example('vision'), alert: true })).toBe('unknown alert true')
+  })
+
   it('rejects a frame id that is not a whole number from zero up', () => {
     const reason = 'frame_id must be a non-negative integer'
     expect(validateVision({ ...example('vision'), frame_id: 1.5 })).toBe(reason)

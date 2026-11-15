@@ -124,6 +124,45 @@ def test_degraded_heartbeats_when_publishing_stops_and_recovery_after():
     assert recovered[-1]["frame_id"] == 42
 
 
+def test_heartbeats_carry_the_last_published_phase_and_no_alert():
+    # A camera stall during a carry is not the end of the carry, and the alert belongs to the frame that saw a drop.
+    with VisionPublisher(ANY_PORT, send_hwm=20, watchdog=FAST) as pub, Subscriber(pub.endpoint) as sub:
+        wait_until_connected(pub, sub)
+        pub.publish(build_vision_message(t=time.time(), frame_id=7, status="no_target", phase="carry",
+                                         summary="Grip lost. Object may have dropped.", alert="dropped"))
+        stalled = collect(sub, 0.45)
+    heartbeats = [m for m in stalled if m["status"] == "degraded"]
+    assert len(heartbeats) >= 2
+    for beat in heartbeats:
+        validate_vision(beat)
+        assert beat["phase"] == "carry" and beat["alert"] is None and beat["frame_id"] == 7
+
+
+def test_heartbeats_before_any_message_say_search():
+    with VisionPublisher(ANY_PORT, send_hwm=20, watchdog=FAST) as pub, Subscriber(pub.endpoint) as sub:
+        beats = collect(sub, 0.6)
+    assert beats, "no heartbeat arrived"
+    assert all(b["status"] == "degraded" and b["phase"] == "search" and b["alert"] is None for b in beats)
+
+
+def test_one_subscriber_can_listen_to_several_publishers():
+    with VisionPublisher(ANY_PORT, send_hwm=20, watchdog=CFG) as a, \
+            VisionPublisher(ANY_PORT, send_hwm=20, watchdog=CFG) as b, \
+            Subscriber([a.endpoint, b.endpoint]) as sub:
+        assert sub.endpoints == [a.endpoint, b.endpoint]
+        for pub in (a, b):
+            wait_until_connected(pub, sub)
+        a.publish(message(1))
+        b.publish(message(2))
+        received = collect(sub, 0.3)
+    assert sorted(m["frame_id"] for m in received if m["status"] != "degraded") == [1, 2]
+
+
+def test_a_subscriber_needs_an_endpoint():
+    with pytest.raises(ValueError, match="at least one endpoint"):
+        Subscriber([])
+
+
 def test_conflate_keeps_only_the_newest_message():
     with VisionPublisher(ANY_PORT, send_hwm=100, watchdog=CFG) as pub, \
             Subscriber(pub.endpoint, conflate=True) as sub:

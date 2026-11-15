@@ -31,7 +31,8 @@ export function viewOf(latest: VisionMessage | null, state: VisionState, previou
   const usable = hasGuidance(state) && latest !== null
   return {
     state,
-    // A degraded heartbeat does not know the phase (it always says "search"), so keep the last one.
+    // A degraded heartbeat repeats the last published phase (vision before 14 Nov 2026 always said "search"),
+    // which the previous view already shows, so keep that.
     phase: latest && latest.status !== 'degraded' ? latest.phase : previous.phase,
     label: usable ? (latest.target?.label ?? null) : null,
     distance: usable ? (latest.guidance?.distance_hint ?? null) : null,

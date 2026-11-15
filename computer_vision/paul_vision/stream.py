@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import socketserver
 import threading
 import time
@@ -34,6 +35,8 @@ STREAM_PATH = "/stream"
 _BOUNDARY = b"frame"
 _LOOPBACK_NAMES = ("127.0.0.1", "localhost")
 _SEND_TIMEOUT_S = 5.0  # a viewer that accepts no data for this long is dropped
+_LINGER_S = 2.0  # after the answer, wait at most this long for the client to close its end...
+_LINGER_MAX_BYTES = 64 * 1024  # ...and drop at most this much of what it still sends
 
 
 def _host_name(header: str | None) -> str:
@@ -210,6 +213,26 @@ class _Server(ThreadingHTTPServer):
         # HTTPServer.server_bind also looks up the host's full name, which can take seconds on Windows.
         socketserver.TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address[:2]
+
+    def shutdown_request(self, request) -> None:
+        # Close in stages (RFC 9112, 9.6): end the answer, then read and drop what the client still sends
+        # until it closes its end. A refused POST leaves its body unread, and a socket closed with unread
+        # data resets the connection; on Windows the reset discards the answer before the client reads it
+        # (WinError 10053 instead of the 400, 403, 404 or 503). Bounded in time and bytes: past either,
+        # the connection is closed at once.
+        try:
+            request.shutdown(socket.SHUT_WR)
+            deadline = time.monotonic() + _LINGER_S
+            left = _LINGER_MAX_BYTES
+            while left > 0 and (wait_s := deadline - time.monotonic()) > 0:
+                request.settimeout(wait_s)
+                data = request.recv(min(left, 8192))
+                if not data:
+                    break  # the client has closed its end
+                left -= len(data)
+        except OSError:
+            pass  # reset, timed out, or already gone
+        self.close_request(request)
 
 
 class _Handler(BaseHTTPRequestHandler):

@@ -4,8 +4,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .aruco import SOURCE_ARUCO, STATION_DROP
 from .config import SelectionConfig
 from .geometry import center
+from .phase import DOMAIN_OBJECTS, DOMAIN_STATION
 from .types import STATUS_LOW_CONFIDENCE, STATUS_NO_TARGET, STATUS_OK, Track
 
 _HALF_DIAGONAL = math.hypot(0.5, 0.5)  # centre-to-corner distance of the normalized frame
@@ -25,11 +27,17 @@ class TargetSelector:
     Acquiring needs `conf_lock`; holding only needs `conf_keep`. A rival must outscore the current
     target by `switch_margin` for `switch_dwell_s` before the target switches. If the target misses
     a frame, its last box is held for `coast_s` before it is dropped.
+
+    The domain (phase.target_domain) says what may be a target at all: in `objects`, anything the object
+    detector found (never a station marker), narrowed by the preferred label; in `station`, only the drop
+    station's marker. The pick station is never a target. Status counts candidates of the domain only, so a cup
+    in view during carry is `no_target`, not `low_confidence`.
     """
 
     def __init__(self, cfg: SelectionConfig):
         self._cfg = cfg
         self._preferred = cfg.preferred_label
+        self.domain = DOMAIN_OBJECTS
         self.reset()
 
     def reset(self) -> None:
@@ -38,11 +46,32 @@ class TargetSelector:
         self._rival_id: int | None = None
         self._rival_since = 0.0
 
+    def set_domain(self, domain: str) -> bool:
+        """Switch what may be targeted. A change drops the current target, so it is re-selected in the new domain
+        on this very frame and the old one is never published under the new phase. True if it changed."""
+        if domain not in (DOMAIN_OBJECTS, DOMAIN_STATION):
+            raise ValueError(f"unknown target domain {domain!r}")
+        if domain == self.domain:
+            return False
+        self.domain = domain
+        self.reset()
+        return True
+
     def set_preferred_label(self, label: str | None) -> None:
-        """Restrict the target to one label (None = any). Hook for the M2 `select_target` command."""
+        """Restrict the object target to one label (None = any). Hook for the `select_target` command.
+
+        Stations are not affected: the preference is kept and applies again once objects are targeted."""
         self._preferred = label
-        if label is not None and self._current is not None and self._current.label != label:
+        if (self.domain == DOMAIN_OBJECTS and label is not None and self._current is not None
+                and self._current.label != label):
             self.reset()
+
+    def candidates(self, tracks: list[Track]) -> list[Track]:
+        """The tracks that may be the target in the current domain."""
+        if self.domain == DOMAIN_STATION:
+            return [tr for tr in tracks if tr.source == SOURCE_ARUCO and tr.label == STATION_DROP]
+        return [tr for tr in tracks
+                if tr.source != SOURCE_ARUCO and (self._preferred is None or tr.label == self._preferred)]
 
     def score(self, track: Track) -> float:
         cx, cy = center(track.bbox)
@@ -51,7 +80,7 @@ class TargetSelector:
 
     def update(self, tracks: list[Track], t: float) -> Selection:
         cfg = self._cfg
-        candidates = [tr for tr in tracks if self._preferred is None or tr.label == self._preferred]
+        candidates = self.candidates(tracks)
         lockable = [tr for tr in candidates if tr.confidence >= cfg.conf_lock]
 
         if self._current is not None:

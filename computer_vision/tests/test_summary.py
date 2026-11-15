@@ -1,7 +1,8 @@
 import pytest
 
 from paul_vision.config import SummaryConfig
-from paul_vision.summary import TEXT_NO_TARGET, TEXT_TARGET_LOST, Summarizer, direction_phrase
+from paul_vision.summary import (EVENT_TEXT, TEXT_FIND_DROP, TEXT_NO_TARGET, TEXT_TARGET_LOST, Summarizer,
+                                direction_phrase)
 from paul_vision.types import Guidance
 
 CFG = SummaryConfig(min_interval_s=2.0, settle_s=0.4, center_band=0.10, slight_band=0.35, band_hysteresis=0.15)
@@ -139,3 +140,116 @@ def test_reset_makes_the_current_state_be_announced_again():
     run(s, 0.0, 3.0, guidance=guide(dx=-0.2))
     s.reset()
     assert run(s, 3.05, 5.0, guidance=guide(dx=-0.2)) == [(3.45, "Cup ahead, slightly left.")]
+
+
+# --- phases and events (M2) ---
+
+@pytest.mark.parametrize("event, text", list(EVENT_TEXT.items()))
+def test_an_event_is_spoken_on_the_frame_it_happens(event, text):
+    s = Summarizer(CFG)
+    run(s, 0.0, 1.0, guidance=guide(dx=-0.2))                       # a sentence was said at 0.4
+    assert s.update("ok", "cup", guide(dx=-0.2), 1.05, phase="grasp", events=(event,)) == text  # inside min_interval
+    assert s.update("ok", "cup", guide(dx=-0.2), 1.10, phase="grasp") is None                  # and only once
+
+
+def test_events_on_the_same_frame_are_spoken_together():
+    s = Summarizer(CFG)
+    said = s.update("no_target", None, None, 0.0, phase="search", events=("sensor_lost", "dropped"))
+    assert said == "Grip sensor lost. Grip lost. Object may have dropped."
+
+
+def test_unknown_events_are_not_spoken():
+    s = Summarizer(CFG)
+    assert s.update("no_target", None, None, 0.0, phase="search", events=("bump",)) is None
+
+
+def test_an_event_counts_as_the_last_utterance_for_the_rate_limit():
+    s = Summarizer(CFG)
+    assert s.update("no_target", None, None, 0.0, phase="carry", events=("grip",)) == "Grip established."
+    said = run(s, 0.05, 4.0, status="no_target", phase="carry")
+    assert said == [(2.0, TEXT_FIND_DROP)]  # settled at 0.4, held until min_interval after the event
+
+
+def test_the_drop_sentence_claims_no_more_than_the_pads_know():
+    # The pads know contact ended away from the drop station; not that the object fell.
+    text = EVENT_TEXT["dropped"]
+    assert "may" in text and "dropped" in text
+
+
+def test_carry_without_the_drop_station_in_view_says_so():
+    assert run(Summarizer(CFG), 0.0, 3.0, status="no_target", phase="carry") == [(0.4, TEXT_FIND_DROP)]
+
+
+def test_carry_speaks_about_the_drop_station_when_it_is_the_target():
+    said = run(Summarizer(CFG), 0.0, 3.0, label="drop station", guidance=guide(dx=0.6, hint="near"), phase="carry")
+    assert said == [(0.4, "Drop station near, right.")]
+
+
+@pytest.mark.parametrize("phase", ["grasp", "place", "release"])
+def test_busy_phases_say_nothing_without_a_target(phase):
+    # The gripper is at the object or at the drop station; "Target lost." would be noise.
+    assert run(Summarizer(CFG), 0.0, 5.0, status="no_target", phase=phase) == []
+
+
+@pytest.mark.parametrize("phase", [None, "search", "approach"])
+def test_object_phases_speak_as_milestone_1(phase):
+    s = Summarizer(CFG)
+    assert run(s, 0.0, 3.0, guidance=guide(dx=-0.2), phase=phase) == [(0.4, "Cup ahead, slightly left.")]
+    assert run(s, 3.05, 6.0, status="no_target", phase=phase) == [(3.45, TEXT_TARGET_LOST)]
+
+
+def test_the_blind_spot_does_not_say_target_lost():
+    s = Summarizer(CFG)
+    run(s, 0.0, 3.0, guidance=guide(hint="in_reach", aligned=True), phase="approach")
+    assert run(s, 3.05, 4.5, status="no_target", phase="approach", blind=True) == []
+    # Once the window is over and nothing gripped, the loss is real and is said.
+    assert run(s, 4.55, 6.0, status="no_target", phase="approach") == [(4.95, TEXT_TARGET_LOST)]
+
+
+def test_a_new_domain_does_not_call_the_old_target_lost():
+    s = Summarizer(CFG)
+    run(s, 0.0, 3.0, guidance=guide(dx=-0.2), phase="approach")
+    s.forget_target()                                            # carry: the cup is out of scope, not lost
+    run(s, 3.05, 6.0, status="no_target", phase="carry")
+    s.forget_target()                                            # back to objects after the release
+    assert run(s, 6.05, 9.0, status="no_target", phase="search") == [(6.45, TEXT_NO_TARGET)]
+
+
+def test_forget_target_keeps_the_rate_limit():
+    s = Summarizer(CFG)
+    run(s, 0.0, 0.4, guidance=guide(dx=-0.2))                   # said at 0.4
+    s.forget_target()
+    assert run(s, 0.45, 3.0, status="no_target", phase="carry") == [(2.4, TEXT_FIND_DROP)]
+
+
+def test_an_unknown_phase_is_a_bug():
+    with pytest.raises(ValueError, match="unknown phase"):
+        Summarizer(CFG).update("no_target", None, None, 0.0, phase="lunch")
+
+
+# --- the label manager's notices (M4) ---
+
+def test_a_notice_is_spoken_at_once_and_only_once():
+    s = Summarizer(CFG)
+    run(s, 0.0, 1.0, guidance=guide(dx=-0.2))                                  # said at 0.4
+    assert s.update("ok", "cup", guide(dx=-0.2), 1.05, notices=("Learning my flask.",)) == "Learning my flask."
+    assert run(s, 1.1, 10.0, guidance=guide(dx=-0.2)) == []                    # the scene did not change
+
+
+def test_the_description_is_still_due_after_a_notice():
+    s = Summarizer(CFG)
+    assert s.update("ok", "cup", guide(dx=-0.2), 0.0, notices=("My flask is ready.",)) == "My flask is ready."
+    assert run(s, 0.05, 3.0, guidance=guide(dx=-0.2)) == [(2.0, "Cup ahead, slightly left.")]  # past the rate limit
+
+
+def test_a_tag_going_live_renames_the_spoken_target():
+    s = Summarizer(CFG)
+    run(s, 0.0, 3.0, label="bottle", guidance=guide(dx=-0.2))
+    assert s.update("ok", "bottle", guide(dx=-0.2), 3.05, notices=("My flask is ready.",)) == "My flask is ready."
+    assert run(s, 3.1, 6.0, label="my flask", guidance=guide(dx=-0.2)) == [(5.05, "My flask ahead, slightly left.")]
+
+
+def test_events_come_before_notices_on_the_same_frame():
+    s = Summarizer(CFG)
+    said = s.update("no_target", None, None, 0.0, phase="carry", events=("grip",), notices=("Learning my mug.",))
+    assert said == "Grip established. Learning my mug."

@@ -114,6 +114,34 @@ export function selectTarget(label: string | null): void {
   session.log('command', label ? `Target set to ${label}` : 'Target set to any object')
 }
 
+export type LabelCommand = Extract<Command, { type: 'tag_visual' | 'tag_text' | 'untag' }>
+
+function describeLabelCommand(command: LabelCommand): string {
+  switch (command.type) {
+    case 'untag':
+      return `Forget ${command.name}`
+    case 'tag_text':
+      return `Teach ${command.name} from a description`
+    case 'tag_visual':
+      return `Teach ${command.name} from ${command.bbox ? 'a drawn box' : 'the locked target'}`
+  }
+}
+
+/**
+ * Sends a command to vision's label library and logs it. Vision answers in `summary` ("Learning my flask.",
+ * then "My flask is ready." or why it refused), which the console shows as a caption.
+ * @returns whether the command went out
+ */
+export function sendLabelCommand(command: LabelCommand): boolean {
+  const session = useSession.getState()
+  const sent = sendCommand(command)
+  const what = describeLabelCommand(command)
+  if (sent) session.log('command', `${what}: sent`)
+  else if (session.link.state === 'simulated') session.log('command', `${what}: the simulator cannot learn names`, 'caution')
+  else session.log('command', `${what}: not sent, no connection`, 'caution')
+  return sent
+}
+
 export function toggleSpeak(): void {
   const settings = useSettings.getState()
   if (settings.speak && 'speechSynthesis' in window) window.speechSynthesis.cancel()
