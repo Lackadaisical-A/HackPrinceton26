@@ -16,9 +16,10 @@ dependencies = [
 
 # PyTorch build selection (see https://docs.astral.sh/uv/guides/integration/pytorch/).
 # No extra: torch comes from PyPI, which is the CPU build on Windows. Fine for the Intel laptop.
-# Demo machine (NVIDIA): always pass `--extra cu130`, e.g. `uv run --extra cu130 python -m paul_vision`.
+# NVIDIA: pass --extra cu128 for CUDA 12.8 drivers, or --extra cu130 for CUDA 13 drivers.
 [project.optional-dependencies]
 cpu = ["torch>=2.11", "torchvision>=0.26"]
+cu128 = ["torch>=2.11", "torchvision>=0.26"]
 cu130 = ["torch>=2.11", "torchvision>=0.26"]
 
 [dependency-groups]
@@ -28,21 +29,28 @@ bake = ["clip @ git+https://github.com/ultralytics/CLIP.git"]
 
 [tool.uv]
 default-groups = ["dev", "bake"]
-conflicts = [[{ extra = "cpu" }, { extra = "cu130" }]]
+conflicts = [[{ extra = "cpu" }, { extra = "cu128" }, { extra = "cu130" }]]
 
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
     { index = "pytorch-cu130", extra = "cu130" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
     { index = "pytorch-cu130", extra = "cu130" },
 ]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [[tool.uv.index]]

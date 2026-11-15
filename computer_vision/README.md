@@ -2,7 +2,7 @@
 
 Finds objects in the wrist-camera feed, picks a target, and publishes guidance ("move so the target is centred") over ZMQ. Other processes turn that into haptic pulses and speech. Vision assists the operator and never controls the arm.
 
-Milestone 1 is built: frame sources, YOLOE detection, tracking, target selection, guidance, spoken summaries, the `vision` publisher with a stall watchdog, the debug overlay, and tests. Built since: the `command` receiver and the camera picture for the web console (see "Web console" below). What is not built or not verified yet (stations, pressure, the later phases, user labelling, speech to text, the CUDA run) is listed in `NOT_BUILT.md`.
+Milestone 1 is built: frame sources, YOLOE detection, tracking, target selection, guidance, spoken summaries, the `vision` publisher with a stall watchdog, the debug overlay, and tests. Built since: the `command` receiver and the camera picture for the web console (see "Web console" below). The CUDA profile has also been run with the web console on the NVIDIA machine. What is not built or not verified yet (stations, pressure, the later phases, user labelling, speech to text, demo-object accuracy) is listed in `NOT_BUILT.md`.
 
 ## Run it
 
@@ -46,7 +46,9 @@ Both use `yoloe-26s`, so thresholds tuned on one machine carry over to the other
 
 ### Demo machine bring-up
 
-The CUDA profile has not been run yet: this laptop has no NVIDIA GPU. First run on the demo machine:
+Choose the extra for the installed driver. The RTX 2080 Super Max-Q machine was verified with driver 573.91 and `--extra cu128` (PyTorch 2.11.0+cu128). Use `cu128` instead of `cu130` in every command below on that machine. CUDA 13 requires driver 580 or newer; see [NVIDIA compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html) and [PyTorch builds](https://pytorch.org/get-started/previous-versions/).
+
+First run:
 
 1. `uv sync --extra cu130`
 2. `uv run --extra cu130 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"` must print `True`. If it prints `False`, update the NVIDIA driver (the wheels are built for CUDA 13.0).
@@ -55,7 +57,26 @@ The CUDA profile has not been run yet: this laptop has no NVIDIA GPU. First run 
 5. `uv run --extra cu130 python -m paul_vision --source wrist --no-overlay --max-frames 300`. The banner must say `torch on CUDA`; note the FPS and latency.
 6. `uv run --extra cu130 python -m paul_vision --source wrist` and check the orientation (below).
 
-Always pass `--extra cu130` on that machine. A plain `uv run` re-syncs the environment to the CPU build of PyTorch.
+Always pass the chosen extra (`--extra cu128` or `--extra cu130`). A plain `uv run` re-syncs the environment to the CPU build of PyTorch.
+
+### NVIDIA web UI verification, 14 November 2026
+
+Tested commit `d156242` with the added `cu128` extra, Python 3.12, PyTorch 2.11.0+cu128, YOLOE-26s and Chrome. The detector banner reported `torch on CUDA 0`, and an independent CUDA tensor calculation succeeded.
+
+- Camera 0: 1280x720 MJPG, 25.4 messages/s over a 596-message sample with the console watching. Capture-to-subscriber age was 55 ms median and 74 ms p95. These are telemetry timings, not measured screen-display latency.
+- Camera 1: 300 frames in 30.1 s (10.0 FPS), capture-to-publish mean 38 ms and p95 47 ms. The console correctly showed the low-rate warning.
+- The documented paper-cup replay showed the cup box, confidence, arrow, distance and captions. A 927-message sample had 681 cup locks and zero contract-validation errors. Replay ran about 23–30 FPS across the test; this is a smoke test, not an accuracy score.
+- The console's Bottle and Cup buttons reached vision and changed its target filter; Any object sent `clear_target`. Verified in both bridge and vision logs.
+- Stopping vision hid guidance and showed the missing-data warning. Restarting vision restored telemetry and the picture without reconnecting the browser. The replay's first inference briefly triggered the watchdog before recovering.
+- The browser accepted more than 3,500 vision messages with zero rejections. Test suites passed: vision 271, bridge 47, frontend 246; frontend production build passed.
+
+The local session uses stream port **18766** because another application occupies 8766. Its config and logs are in the ignored `runs/gpu-web-test/` directory. To restart vision with this machine's saved config:
+
+```powershell
+uv run --extra cu128 python -m paul_vision --config runs/gpu-web-test/config.local.yaml --source 0 --backend torch --device 0 --no-overlay
+```
+
+Start the bridge and frontend as described below, then select Live bridge at `http://127.0.0.1:5173/#/signals`, with `ws://127.0.0.1:8765` and camera URL `http://127.0.0.1:18766/stream`. Camera 0 was left running. Robot movement, pressure/haptic integration, camera orientation on the arm and demo-object accuracy were not part of this test.
 
 ## For subscribers
 
@@ -130,6 +151,15 @@ Every threshold lives in `config.yaml`, with a comment on each key. Unknown or m
 - `summary.min_interval_s`: minimum gap between spoken sentences
 
 ## Camera
+
+The live console's **Camera source** selector lists device names using the configured
+OpenCV backend. **Refresh** rescans without opening cameras. Selecting a camera
+prepares it in the background, keeps the current feed until a new frame arrives,
+then resets tracking and guidance for the new scene. Failure keeps the old source.
+The runtime selection lasts until restart; `camera.wrist_index` remains the startup
+default. Switching is disabled with `--record` to preserve the video's dimensions.
+The MJPEG server exposes `GET /sources?refresh=1` and `POST /source` (`{"id":"…"}`);
+browser access to these controls is restricted to local console origins.
 
 - **Orientation.** Run with the overlay and move an object to the gripper's right: it must move right in the window, and the arrow must point right. If not, set `rotate_deg` / `flip_h` / `flip_v`. The image itself is turned before detection, so the overlay, `bbox` and `dx`/`dy` always agree. For a 90° or 270° mount also swap `detector.imgsz` to `[640, 384]`.
 - **Finding the index.** `uv run python scripts/list_cameras.py` lists every camera with its real frame rate and saves a picture of each to `snapshots/`.

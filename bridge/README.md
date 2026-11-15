@@ -76,7 +76,9 @@ On 14 November 2026, on the development laptop, with vision reading the laptop's
 
 ## What has not
 
-- `pressure` and `robot`: nothing publishes them yet, so the bridge has only relayed `vision` from a real publisher.
+- Physical robot feedback and pressure: the pot controller now publishes `robot`, including
+  labeled previews verified through this bridge alongside real vision. Physical servo feedback
+  and the pressure publisher still need a hardware test. See [POT_TEST.md](../POT_TEST.md).
 - More than one console at a time, outside the test suite.
 - A console on another computer (`--listen` on a network address with `--origin`).
 - Running for longer than a few minutes.

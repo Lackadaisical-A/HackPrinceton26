@@ -1,0 +1,69 @@
+{
+  "created_at": "2026-07-15T22:16:59.464959+00:00",
+  "pins": [
+    "32",
+    "33",
+    "34",
+    "35",
+    "25",
+    "26"
+  ],
+  "motors": [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll",
+    "gripper"
+  ],
+  "inverted_motors": [
+    "shoulder_pan",
+    "shoulder_lift"
+  ],
+  "input_modes": {
+    "32": "pot",
+    "33": "pot",
+    "34": "pot",
+    "35": "pot",
+    "25": "pot",
+    "26": "pot"
+  },
+  "calibrations": {
+    "32": {
+      "motor": "shoulder_pan",
+      "low": 702.0,
+      "center": 2055.0,
+      "high": 3408.0
+    },
+    "33": {
+      "motor": "shoulder_lift",
+      "low": 1135.0,
+      "center": 2135.5,
+      "high": 3136.0
+    },
+    "34": {
+      "motor": "elbow_flex",
+      "low": 0.0,
+      "center": 957.5,
+      "high": 1915.0
+    },
+    "35": {
+      "motor": "wrist_flex",
+      "low": 817.0,
+      "center": 1680.0,
+      "high": 2543.0
+    },
+    "25": {
+      "motor": "wrist_roll",
+      "low": 0.0,
+      "center": 2047.5,
+      "high": 4095.0
+    },
+    "26": {
+      "motor": "gripper",
+      "low": 0.0,
+      "center": 2047.5,
+      "high": 4095.0
+    }
+  }
+}

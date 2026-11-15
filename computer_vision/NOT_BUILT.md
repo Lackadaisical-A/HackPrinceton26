@@ -15,7 +15,6 @@ This is the state of the code on 14 November 2026 at 09:22. The command and M3 e
 | M3 | ZMQ to WebSocket bridge | built in `../bridge` and run with vision and the web console; what that run did not cover is below |
 | M4 | User labelling of objects | not built |
 | M5 | Speech to text | not built |
-| | CUDA profile on the demo machine | never run |
 | | Camera orientation on the arm, class list, thresholds | not checked on our setup |
 
 The milestones depend on each other in this order: M4 needs commands (M2) and, for the web console, the bridge (M3).
@@ -62,7 +61,7 @@ Servo position and load from the arm controller, on `transport.robot_sub` (port 
 The bridge is in `../bridge` (its `README.md` says how to run it and what it accepts), and the vision side is `paul_vision/stream.py` and `paul_vision/commands.py`. All three were run together with the web console on 14 November; `README.md` here describes that run under "Web console". Not covered by it:
 
 - **The wrist camera.** It was not plugged in. The picture came from the laptop's built-in camera (`--source 0`).
-- **Frame rate with a viewer.** In the one run where the built-in camera delivered 30 FPS, vision held 29 to 30 FPS with the console watching. `detect` rose from about 15 ms to about 26 ms while headless Chrome was running on the same integrated GPU. Not measured on the demo machine or with an ordinary browser window.
+- **Sustained frame rate on the final setup.** The NVIDIA machine has now been tested with ordinary Chrome: camera 0 averaged 25.4 messages/s and camera 1 ran at 10 FPS. See `README.md` for the short-run results. A long run with the final camera, lighting and other demo processes remains to be measured.
 - **How far the overlay and the picture are out of step.** They reach the console separately (WebSocket and MJPEG). Not measured on a moving object.
 - **Box edges that coincide.** `messages.validate_vision` accepts a box with `x1 == x2` or `y1 == y2`; the console's validator requires `x1 < x2` and `y1 < y2` and would drop that message. Not seen in a run, and not decided which side should change.
 
@@ -102,7 +101,7 @@ A separate process that sends speech to a cloud service and publishes `select_ta
 
 ## Not verified
 
-- **CUDA profile.** Never run: the development laptop has no NVIDIA GPU. FPS and latency on the demo machine are not measured. The steps for the first run are in `README.md` under "Demo machine bring-up".
+- **CUDA startup and sustained load.** The CUDA 12.8 profile and web UI were verified on the RTX 2080 Super Max-Q; results are in `README.md`. The first inference on the cup replay took 2.9 s and briefly triggered `degraded`, then recovered. Long-duration performance and the CUDA 13.0 build on this machine remain unverified.
 - **Camera orientation on the real arm** (`camera.rotate_deg`, `flip_h`, `flip_v`). The check is in `README.md` under "Camera".
 - **A camera mounted at 90° or 270°.** It needs `detector.imgsz: [640, 384]` and a new bake. That shape has never been run.
 - **The class list** `[cup, bottle, pill bottle, box]`. It is a guess until the demo objects are known. On the sample clips "pill bottle" almost never wins and "box" does not match small blocks or trays.

@@ -1,5 +1,10 @@
 # PAUL
 
+**Integrated potentiometer test:** run `.\demo.ps1 -DryRun`, then `.\demo.ps1`
+for hardware control with the robot camera and web console. Defaults match
+COM9 → COM6 seven-axis control; use `-Controller pots` for six channels only.
+See [POT_TEST.md](POT_TEST.md) for setup, controls, and the later IMU handoff.
+
 > **Move the arm. Feel the interaction.**
 
 PAUL is an AI-assisted wearable for controlling a robot arm remotely and feeling what it touches. Module details: `computer_vision/CLAUDE.md` (camera AI), `bno085_reader/` (IMU armband firmware).

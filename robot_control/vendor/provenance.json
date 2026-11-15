@@ -1,0 +1,189 @@
+{
+  "source": "C:\\Users\\herma\\Documents\\lerobot",
+  "source_commit": "2a45cc3abdd49f7992273028324919ce25ab5f56",
+  "note": "Local source may contain changes; file hashes identify copied content. utils/__init__.py omits unrelated ML re-exports; types.py retains only RobotAction/RobotObservation aliases so hardware control does not require PyTorch. Robot/camera interface dependencies were added for the copied potentiometer and slider controllers.",
+  "files": [
+    {
+      "path": "lerobot/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\__init__.py",
+      "source_sha256": "5c2fb7720e0a0a26bc13a15ac2089f62d8f7ba9f531923d5a550dd95d8b8f1a0",
+      "copied_sha256": "5c2fb7720e0a0a26bc13a15ac2089f62d8f7ba9f531923d5a550dd95d8b8f1a0",
+      "modified": false
+    },
+    {
+      "path": "lerobot/__version__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\__version__.py",
+      "source_sha256": "a1cb76dbda2549b9bad669c647b49d9ccd03c0a8af9477925c95d516d2a7365c",
+      "copied_sha256": "a1cb76dbda2549b9bad669c647b49d9ccd03c0a8af9477925c95d516d2a7365c",
+      "modified": false
+    },
+    {
+      "path": "lerobot/cameras/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\cameras\\__init__.py",
+      "source_sha256": "891f0e06239bd7cf7b4e8374b4139e876d59a592ed4472baef5c8a77b25894f5",
+      "copied_sha256": "891f0e06239bd7cf7b4e8374b4139e876d59a592ed4472baef5c8a77b25894f5",
+      "modified": false
+    },
+    {
+      "path": "lerobot/cameras/camera.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\cameras\\camera.py",
+      "source_sha256": "d0107c78112f4de64067e86712280df0e88977eb25c9fd66d4b496b66544a6d3",
+      "copied_sha256": "d0107c78112f4de64067e86712280df0e88977eb25c9fd66d4b496b66544a6d3",
+      "modified": false
+    },
+    {
+      "path": "lerobot/cameras/configs.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\cameras\\configs.py",
+      "source_sha256": "24c63f96dc88a7cd5a6cee3946516b12845abd929054a70eb32fa9ed559a3415",
+      "copied_sha256": "24c63f96dc88a7cd5a6cee3946516b12845abd929054a70eb32fa9ed559a3415",
+      "modified": false
+    },
+    {
+      "path": "lerobot/cameras/utils.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\cameras\\utils.py",
+      "source_sha256": "18e71d538405b5c5c084a8e78b575337ec295c5116b09308f07c801e73af4ea6",
+      "copied_sha256": "18e71d538405b5c5c084a8e78b575337ec295c5116b09308f07c801e73af4ea6",
+      "modified": false
+    },
+    {
+      "path": "lerobot/motors/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\motors\\__init__.py",
+      "source_sha256": "3f484249761f33e301956930eb86bdc192099efc07f90c2e1f81a124b4f96427",
+      "copied_sha256": "3f484249761f33e301956930eb86bdc192099efc07f90c2e1f81a124b4f96427",
+      "modified": false
+    },
+    {
+      "path": "lerobot/motors/encoding_utils.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\motors\\encoding_utils.py",
+      "source_sha256": "3f14c41258e8440762b59f990cb4799bec810e793d74c4ae4b3b2345ca6bcb35",
+      "copied_sha256": "3f14c41258e8440762b59f990cb4799bec810e793d74c4ae4b3b2345ca6bcb35",
+      "modified": false
+    },
+    {
+      "path": "lerobot/motors/feetech/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\motors\\feetech\\__init__.py",
+      "source_sha256": "108fa8246af48c0656bab18d0bcdbb60b62f5e89500785cbd91af3e2fa650297",
+      "copied_sha256": "108fa8246af48c0656bab18d0bcdbb60b62f5e89500785cbd91af3e2fa650297",
+      "modified": false
+    },
+    {
+      "path": "lerobot/motors/feetech/feetech.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\motors\\feetech\\feetech.py",
+      "source_sha256": "9f561aab79be7560e8617d6dea0871a0f3b174202a904fd65c018fdcc4a1a4d7",
+      "copied_sha256": "9f561aab79be7560e8617d6dea0871a0f3b174202a904fd65c018fdcc4a1a4d7",
+      "modified": false
+    },
+    {
+      "path": "lerobot/motors/feetech/tables.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\motors\\feetech\\tables.py",
+      "source_sha256": "3913700df66f7f3d02f4587266427c68f848d86592801b21f3fcf20347dc4d66",
+      "copied_sha256": "3913700df66f7f3d02f4587266427c68f848d86592801b21f3fcf20347dc4d66",
+      "modified": false
+    },
+    {
+      "path": "lerobot/motors/motors_bus.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\motors\\motors_bus.py",
+      "source_sha256": "0fdee8eeb4e8f3b08d70cca36abbd43374595cc2e66492a2fd0163ca05295544",
+      "copied_sha256": "0fdee8eeb4e8f3b08d70cca36abbd43374595cc2e66492a2fd0163ca05295544",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\__init__.py",
+      "source_sha256": "12546ab1cc4e291a594a2c0677119dbca359aeb6b74fae8fa22d8938e2716473",
+      "copied_sha256": "12546ab1cc4e291a594a2c0677119dbca359aeb6b74fae8fa22d8938e2716473",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/config.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\config.py",
+      "source_sha256": "c7f545fb694b6336a86d6a1dbfae33c438d528208795f26e8da459f80def8bdf",
+      "copied_sha256": "c7f545fb694b6336a86d6a1dbfae33c438d528208795f26e8da459f80def8bdf",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/robot.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\robot.py",
+      "source_sha256": "e07761cd5c5fa030dcd1033338c8b3209641d24cec2462b98245620044645e78",
+      "copied_sha256": "e07761cd5c5fa030dcd1033338c8b3209641d24cec2462b98245620044645e78",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/so_follower/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\so_follower\\__init__.py",
+      "source_sha256": "fdfae21bf7afe74154974cd2d97eeb551dab08d54b7e190a70ce7fe25b6ac6a0",
+      "copied_sha256": "fdfae21bf7afe74154974cd2d97eeb551dab08d54b7e190a70ce7fe25b6ac6a0",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/so_follower/config_so_follower.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\so_follower\\config_so_follower.py",
+      "source_sha256": "9c3787ae8ae2948a564bb5a397f653a4446d9c4262d6876854c1392cda05f9a0",
+      "copied_sha256": "9c3787ae8ae2948a564bb5a397f653a4446d9c4262d6876854c1392cda05f9a0",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/so_follower/so_follower.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\so_follower\\so_follower.py",
+      "source_sha256": "90ff21e4a338274530d5ffad47aed53235ea7045449e3d2945642f6b324f3c03",
+      "copied_sha256": "90ff21e4a338274530d5ffad47aed53235ea7045449e3d2945642f6b324f3c03",
+      "modified": false
+    },
+    {
+      "path": "lerobot/robots/utils.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\robots\\utils.py",
+      "source_sha256": "0945e5a4ec271e08ad8a7f4afd019c95990ec2c0f7997e25e99a1ac28c374727",
+      "copied_sha256": "0945e5a4ec271e08ad8a7f4afd019c95990ec2c0f7997e25e99a1ac28c374727",
+      "modified": false
+    },
+    {
+      "path": "lerobot/types.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\types.py",
+      "source_sha256": "057955a9e882ee4329918f0618e918075032274628a893059b26fbdd63529f8a",
+      "copied_sha256": "1725c7f01d948f132543d2a587a84364309d61c71d577b144c8397cc70ec447d",
+      "modified": true
+    },
+    {
+      "path": "lerobot/utils/__init__.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\utils\\__init__.py",
+      "source_sha256": "a3cf36b71cc2d79059add8485095ff597379b3d248d9d31db962c6be1043d4ef",
+      "copied_sha256": "4a3c2c363342b87d36179040d5acf12700a6eef81b84ad9195c247c39bfedbad",
+      "modified": true
+    },
+    {
+      "path": "lerobot/utils/constants.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\utils\\constants.py",
+      "source_sha256": "cfda771d1eb10ee6edc0d552f007a13c593420c8b3a11aa4960d486f6a2e9a19",
+      "copied_sha256": "cfda771d1eb10ee6edc0d552f007a13c593420c8b3a11aa4960d486f6a2e9a19",
+      "modified": false
+    },
+    {
+      "path": "lerobot/utils/decorators.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\utils\\decorators.py",
+      "source_sha256": "44280a838165fc77eb204dd08b8138c6ac2e54a50268e22d56acf43fdc5c6197",
+      "copied_sha256": "44280a838165fc77eb204dd08b8138c6ac2e54a50268e22d56acf43fdc5c6197",
+      "modified": false
+    },
+    {
+      "path": "lerobot/utils/errors.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\utils\\errors.py",
+      "source_sha256": "f6a90ad226f48ecc5618621b4d3e18ca60fc0b6ee5d78da6522b9a6a54f57f62",
+      "copied_sha256": "f6a90ad226f48ecc5618621b4d3e18ca60fc0b6ee5d78da6522b9a6a54f57f62",
+      "modified": false
+    },
+    {
+      "path": "lerobot/utils/import_utils.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\utils\\import_utils.py",
+      "source_sha256": "ecd0c83a354b34bef65371ba28b857de08ee84912abe38ad2ac12aad5cdfb1ee",
+      "copied_sha256": "ecd0c83a354b34bef65371ba28b857de08ee84912abe38ad2ac12aad5cdfb1ee",
+      "modified": false
+    },
+    {
+      "path": "lerobot/utils/utils.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\src\\lerobot\\utils\\utils.py",
+      "source_sha256": "05083608618d1472431bafd5ecf5fc31da8f0ff24946834a1b5ed531a794309e",
+      "copied_sha256": "05083608618d1472431bafd5ecf5fc31da8f0ff24946834a1b5ed531a794309e",
+      "modified": false
+    }
+  ]
+}

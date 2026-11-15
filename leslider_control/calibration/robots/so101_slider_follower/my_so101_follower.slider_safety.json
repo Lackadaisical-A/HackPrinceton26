@@ -1,0 +1,9 @@
+{
+  "version": 4,
+  "phase": 28,
+  "slider_id": 7,
+  "drive_mode": 1,
+  "range_min": -446,
+  "range_max": 6158,
+  "travel_ticks": 6604
+}

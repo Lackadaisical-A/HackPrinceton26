@@ -1,0 +1,147 @@
+{
+  "source": "C:\\Users\\herma\\Documents\\lerobot",
+  "source_commit": "2a45cc3abdd49f7992273028324919ce25ab5f56",
+  "note": "Original checkout unchanged. Adaptations: test import paths, accurate multi-turn documentation/help commands, classic ESP32 compile guard in sketches. Runtime motor-control logic preserved. Local run.py/bootstrap.py/control.ps1 select repo-local drivers and calibration. Shared drivers are recorded in ../robot_control/vendor/provenance.json.",
+  "files": [
+    {
+      "path": "scripts/calibrate_leslider_motor_only.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\calibrate_leslider_motor_only.py",
+      "source_sha256": "fd6a48e1c0fa8cc6f3c25d3ea397d9193e347ee7cc8a2aca9c04b6db0fd02da0",
+      "copied_sha256": "fd6a48e1c0fa8cc6f3c25d3ea397d9193e347ee7cc8a2aca9c04b6db0fd02da0",
+      "modified": false
+    },
+    {
+      "path": "scripts/calibrate_slider_motor_only.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\calibrate_slider_motor_only.py",
+      "source_sha256": "8ae26fea74a1c50dfda84fefcefbe580f1b9549117a675f4ed006cf4c287e74a",
+      "copied_sha256": "59458ee4690fbcb993ef227126418f6153996234d7246f5696f737faa1c1073e",
+      "modified": true
+    },
+    {
+      "path": "scripts/esp32_wh148_leader_bridge.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\esp32_wh148_leader_bridge.py",
+      "source_sha256": "dc82007f02333b0b6dcfc5ad373493b20415b5a1b9d49dab21d17f3611856b92",
+      "copied_sha256": "c5e94d3692685e322faa3dc41410b8353314fe153e839d3233b24c0d1770c651",
+      "modified": true
+    },
+    {
+      "path": "scripts/esp32_wh148_leslider_7dof_bridge.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\esp32_wh148_leslider_7dof_bridge.py",
+      "source_sha256": "f05cc13e61e325d2bafd3f9087985e121d47e61c3c4bd7bcc5c7273b8bd8d713",
+      "copied_sha256": "6be1881b43c88d84809066c55ebfd71ea974dfcb435cbdc448ce7969dc1a7fb8",
+      "modified": true
+    },
+    {
+      "path": "scripts/esp32_wh148_slider_7dof_bridge.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\esp32_wh148_slider_7dof_bridge.py",
+      "source_sha256": "6d7c577b4b3be9807ac62bc0ef51c5cdb98b85378b848b1070ddf25b6b951ee6",
+      "copied_sha256": "5c06ab354f3720d5792f41f6017ec9fe89f067c9ff0b5670733a0f1ce6ed9a87",
+      "modified": true
+    },
+    {
+      "path": "scripts/keyboard_slider_control.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\keyboard_slider_control.py",
+      "source_sha256": "df4c8ebb5b0a5eafd16105685a35f3fd84efd54e7e41add052150ef09f1235c8",
+      "copied_sha256": "fdebbb7bb0ae297ee22f3ba232eb7eaa2a03caae62122d2e1a12a572c28e84ec",
+      "modified": true
+    },
+    {
+      "path": "scripts/so101_leslider_position.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\so101_leslider_position.py",
+      "source_sha256": "aecdc33f5250306a92fdde0dce90447f4fb7b84fccf45d0361eb662e6ec317c0",
+      "copied_sha256": "e80ae84fbb89944587599eefc2a1d310a3d836c6ff5d8fc189a54fd9513f4800",
+      "modified": true
+    },
+    {
+      "path": "scripts/so101_phase_utils.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\so101_phase_utils.py",
+      "source_sha256": "bf2f1a2ecc7fd5209625e7dce235147843809a6e12451984793166adbcd8ba4a",
+      "copied_sha256": "bf2f1a2ecc7fd5209625e7dce235147843809a6e12451984793166adbcd8ba4a",
+      "modified": false
+    },
+    {
+      "path": "scripts/so101_slider_follower.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\so101_slider_follower.py",
+      "source_sha256": "c259b34aca7253d6a233daec6a6df859a50316d05bab4ce1481de090ac01b8d8",
+      "copied_sha256": "b259f694754d0c08c41cd602ce64bcb482d1905e91dd6a77deeda2fef33c7c54",
+      "modified": true
+    },
+    {
+      "path": "tests/test_esp32_wh148_leader_bridge.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\tests\\scripts\\test_esp32_wh148_leader_bridge.py",
+      "source_sha256": "249fc18162b47eb521bfe333eca33698cf2525576461c9fccd5d8c924f3a9fff",
+      "copied_sha256": "1b9a948db14eed0e02d34ca91ac00a72504803eb8ccf686bab89c73b4881190a",
+      "modified": true
+    },
+    {
+      "path": "tests/test_esp32_wh148_leslider_7dof_bridge.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\tests\\scripts\\test_esp32_wh148_leslider_7dof_bridge.py",
+      "source_sha256": "33b71b1407bfd9f1d21ef650de9d7ceec2775219f7a8fff52613d9a198b5a1b9",
+      "copied_sha256": "a976601a0eec9d5fbd001b253b8475ba176c457e9e22b4ce994b18a9395d27d5",
+      "modified": true
+    },
+    {
+      "path": "tests/test_keyboard_slider_control.py",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\tests\\scripts\\test_keyboard_slider_control.py",
+      "source_sha256": "a2108b48e5481a906de53b0d25c950da88d46b6c1d078e5851084fcdbb23c2aa",
+      "copied_sha256": "3111934900e7139dece70fdb9d98b39a918305eeab9f8f8e66ff36819ecced7e",
+      "modified": true
+    },
+    {
+      "path": "config/elbow_flex_phase.json",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\config\\elbow_flex_phase.json",
+      "source_sha256": "ea28ed0cf2177e07be98a8bd1e38226f3dfac25ef950c0f5c0575ad99a39b2a2",
+      "copied_sha256": "ea28ed0cf2177e07be98a8bd1e38226f3dfac25ef950c0f5c0575ad99a39b2a2",
+      "modified": false
+    },
+    {
+      "path": "config/wh148_leader_pot_calibration.json",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\config\\wh148_leader_pot_calibration.json",
+      "source_sha256": "bc37995bb204c220b216ca51991a08abbda3f6d607b975e5e4909d99e09dfafa",
+      "copied_sha256": "bc37995bb204c220b216ca51991a08abbda3f6d607b975e5e4909d99e09dfafa",
+      "modified": false
+    },
+    {
+      "path": "config/wh148_slider_7dof_pot_calibration.json",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\config\\wh148_slider_7dof_pot_calibration.json",
+      "source_sha256": "b58a3146f4cfc1a58789aefba4390578dea3631622cb3cac2b860ad815a049b8",
+      "copied_sha256": "b58a3146f4cfc1a58789aefba4390578dea3631622cb3cac2b860ad815a049b8",
+      "modified": false
+    },
+    {
+      "path": "calibration/robots/so101_slider_follower/my_so101_follower.json",
+      "source": "C:\\Users\\herma\\.cache\\huggingface\\lerobot\\calibration\\robots\\so101_slider_follower\\my_so101_follower.json",
+      "source_sha256": "231b119ebd1eb2a69190c26d0388c2eb1a41ab43ff90c0a6601317fb6fc9c723",
+      "copied_sha256": "231b119ebd1eb2a69190c26d0388c2eb1a41ab43ff90c0a6601317fb6fc9c723",
+      "modified": false
+    },
+    {
+      "path": "calibration/robots/so101_slider_follower/my_so101_follower.slider_safety.json",
+      "source": "C:\\Users\\herma\\.cache\\huggingface\\lerobot\\calibration\\robots\\so101_slider_follower\\my_so101_follower.slider_safety.json",
+      "source_sha256": "6e1c805c879e9e7b897c2bb0e16f5f826de74f022861d5641ed30d8cdca0df9c",
+      "copied_sha256": "6e1c805c879e9e7b897c2bb0e16f5f826de74f022861d5641ed30d8cdca0df9c",
+      "modified": false
+    },
+    {
+      "path": "calibration/robots/so_follower/my_so101_follower.json",
+      "source": "C:\\Users\\herma\\.cache\\huggingface\\lerobot\\calibration\\robots\\so_follower\\my_so101_follower.json",
+      "source_sha256": "72ee354df915db62c00263fc9cc94d22404caf9b9bf459b51beba83d0bbd185f",
+      "copied_sha256": "72ee354df915db62c00263fc9cc94d22404caf9b9bf459b51beba83d0bbd185f",
+      "modified": false
+    },
+    {
+      "path": "arduino/esp32_wh148_leader_arm/esp32_wh148_leader_arm.ino",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\esp32_wh148_leader_arm.ino",
+      "source_sha256": "8a8376f4efefbed159b7727cc133115894d3e2b435316534e0df73e2da91fa17",
+      "copied_sha256": "325aa635f05f3bcae44362ca4c6fa843c11e961ff2c8ed30a4a80d098c5fe287",
+      "modified": true
+    },
+    {
+      "path": "arduino/esp32_wh148_leslider_7dof/esp32_wh148_leslider_7dof.ino",
+      "source": "C:\\Users\\herma\\Documents\\lerobot\\scripts_local\\esp32_wh148_leslider_7dof\\esp32_wh148_leslider_7dof.ino",
+      "source_sha256": "9ff16a9d8227438ea3a2901641f2078526fd2841eaf470c279ba7ee0659764ee",
+      "copied_sha256": "bf89977d9364004f5d515aeefdbf7d61fba22b9fd2ff60bc1856260473714cd0",
+      "modified": true
+    }
+  ]
+}

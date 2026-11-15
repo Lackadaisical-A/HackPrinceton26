@@ -18,6 +18,8 @@ Milestone 1 is built and tested: frame sources, YOLOE detection, tracking, targe
 
 Built since: the `command` receiver for `select_target` and `clear_target` (`commands.py`), and the camera stream for the web console (`stream.py`). Both were run on 14 November 2026 with `../bridge` and the console in `../frontend`, on the laptop's built-in camera (`--source 0`; the wrist camera was not plugged in): the picture and overlay showed in the console, both commands took effect, and the console recovered when vision was restarted. `README.md` has the three commands under "Web console".
 
+The NVIDIA web-console path was verified on 14 November 2026 on an RTX 2080 Super Max-Q, driver 573.91, using `--extra cu128` (PyTorch 2.11.0+cu128). Camera 0 averaged 25.4 messages/s, with 55 ms median / 74 ms p95 capture-to-subscriber age; camera 1 ran at 10 FPS. Chrome showed the live camera and cup-replay detection overlay, target commands took effect, and picture/telemetry recovered after a vision restart. The frontend rejected zero of more than 3,500 messages. Vision 271, bridge 47 and frontend 246 tests passed; frontend build passed. Full details and local stream-port override are in `README.md`. Arm movement and demo-object accuracy remain unverified.
+
 Everything that is not built (the rest of M2, and M3 to M5) or not verified is listed in `NOT_BUILT.md`, with the place in the code where each piece plugs in. Read it before starting on any of them. When something there gets built or verified, delete it there and describe it here.
 
 ## Commands
@@ -32,7 +34,7 @@ uv run python scripts/eval_clips.py sample_videos    # report on recorded clips
 uv run python scripts/list_cameras.py                # find the camera index
 ```
 
-On the demo machine every `uv run` needs `--extra cu130`; a plain `uv run` re-syncs to the CPU build of PyTorch.
+On NVIDIA machines every `uv run` needs the selected CUDA extra: `--extra cu128` on the tested driver 573.91 machine, or `--extra cu130` for a CUDA 13-compatible driver. A plain `uv run` re-syncs to the CPU build of PyTorch.
 
 Environment: Python 3.12, uv (not a package; run from this folder), Windows. Two detector profiles are chosen at startup and printed in a banner: `torch on CUDA` (demo machine) and `openvino on Intel GPU` (laptop, CPU as fallback). Both use `yoloe-26s`.
 

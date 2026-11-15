@@ -8,7 +8,7 @@ source:
   video_end: exit
 
 camera:
-  wrist_index: 1            # OpenCV index of the wrist camera (run scripts/list_cameras.py to find it)
+  wrist_index: 0            # Innomaker USB robot camera on this PC; index 1 is the integrated camera
   backend: dshow            # dshow | msmf | any
   width: 1280
   height: 720

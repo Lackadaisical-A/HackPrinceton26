@@ -1,0 +1,13 @@
+{
+  "sensors": {"upper_arm": "s3_imu1", "forearm": "s3_imu2", "hand": "wroom"},
+  "joints": {
+    "shoulder_pan": {"rotation": "upper", "axis": "z", "gain": 1.0, "offset_deg": 0},
+    "shoulder_lift": {"rotation": "upper", "axis": "y", "gain": -1.0, "offset_deg": 0},
+    "elbow_flex": {"rotation": "elbow", "axis": "y", "gain": -1.0, "offset_deg": 0},
+    "wrist_flex": {"rotation": "wrist", "axis": "y", "gain": -1.0, "offset_deg": 0},
+    "wrist_roll": {"rotation": "hand_from_upper", "axis": "x", "gain": 1.0, "offset_deg": 0}
+  },
+  "max_speed_deg_s": 60,
+  "max_sample_age_s": 1.5,
+  "max_sensor_skew_s": 0.2
+}

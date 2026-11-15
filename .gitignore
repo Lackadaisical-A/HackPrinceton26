@@ -1,0 +1,13 @@
+# Local Firebase credentials and database configuration
+/config/
+
+# Local sensor recordings and Python caches
+/recordings/
+__pycache__/
+*.pyc
+.venv/
+/runs/
+/wearable_test/settings.local.json
+/wearable_test/calibration.local.json
+/wearable_test/calibration.local.tmp
+/wearable_test/runtime.log*
