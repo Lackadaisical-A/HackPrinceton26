@@ -85,7 +85,7 @@ def assert_box_on(bbox, corners: np.ndarray, centre: tuple[float, float], px: fl
     assert np.abs(got - expected).max() <= px, (got.round(1), expected.round(1))
 
 
-GUIDANCE = GuidanceConfig(smoothing_tau_s=0.3, deadzone_enter=0.08, deadzone_exit=0.12)
+GUIDANCE = GuidanceConfig(smoothing_tau_s=0.3, deadzone_enter=0.08, deadzone_exit=0.12, aim=[0.5, 0.5])
 DISTANCE = DistanceConfig(hysteresis=0.15, thresholds={"default": DistanceThresholds(near=0.05, in_reach=0.2),
                                                        STATION_DROP: DistanceThresholds(near=0.03, in_reach=0.12)})
 

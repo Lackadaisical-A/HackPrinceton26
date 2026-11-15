@@ -71,6 +71,8 @@ def test_missing_section_is_an_error(raw):
     ("camera", "width", "wide"),
     ("camera", "flip_h", 1),
     ("guidance", "deadzone_enter", "small"),
+    ("guidance", "aim", "centre"),
+    ("guidance", "aim", [0.5, "middle"]),
     ("detector", "classes", "cup"),
     ("detector", "imgsz", 640),
     ("selection", "preferred_label", 3),
@@ -82,6 +84,11 @@ def test_wrong_type_is_an_error(raw, section, key, bad):
     raw[section][key] = bad
     with pytest.raises(ConfigError, match=f"config.{section}.{key}"):
         from_dict(raw)
+
+
+def test_the_shipped_aim_is_the_frame_centre(shipped_cfg):
+    # The console mirrors this as AIM_DEFAULT (frontend/src/config.ts).
+    assert shipped_cfg.guidance.aim == [0.5, 0.5]
 
 
 def test_int_is_accepted_where_a_float_is_expected(raw):
@@ -103,6 +110,10 @@ def test_optional_and_union_fields(raw):
     (lambda r: r["camera"].update(first_frame_s=0.5), "camera.first_frame_s"),
     (lambda r: r["selection"].update(conf_keep=0.9), "conf_keep"),
     (lambda r: r["guidance"].update(deadzone_exit=0.01), "deadzone"),
+    (lambda r: r["guidance"].update(aim=[1.2, 0.5]), r"guidance\.aim must be \[x, y\]"),
+    (lambda r: r["guidance"].update(aim=[0.5, -0.1]), r"guidance\.aim must be \[x, y\]"),
+    (lambda r: r["guidance"].update(aim=[0.5]), r"guidance\.aim must be \[x, y\]"),
+    (lambda r: r["guidance"].update(aim=[0.5, 0.5, 0.5]), r"guidance\.aim must be \[x, y\]"),
     (lambda r: r["distance"]["thresholds"].pop("default"), "default"),
     (lambda r: r["distance"]["thresholds"]["default"].update(near=0.5), "near < in_reach"),
     (lambda r: r["distance"]["thresholds"]["drop station"].update(in_reach=0.9),

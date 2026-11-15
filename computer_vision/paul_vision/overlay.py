@@ -79,12 +79,14 @@ def render(image: np.ndarray, cfg: Config, *, status: str, phase: str, tracks: l
            target: Track | None = None, guidance: Guidance | None = None, coasting: bool = False,
            summary: str | None = None, fps: float = 0.0, latency_ms: float = 0.0,
            banner: str | None = None, pressure_feed: bool = False, grip_source: str = "pads",
-           contact: Contact | None = None, alert: str | None = None, forced: bool = False) -> np.ndarray:
+           contact: Contact | None = None, alert: str | None = None, forced: bool = False,
+           aim: tuple[float, float] | None = None) -> np.ndarray:
     """A downscaled copy of the frame with everything the pipeline decided drawn on it.
 
     pressure_feed: a grip feed is configured, so the grip line is drawn (from `contact`); grip_source says which
     ("pads" or "load", the gripper servo's load). alert: drawn as a
-    banner while the message carries it. forced: the phase was set by command.
+    banner while the message carries it. forced: the phase was set by command. aim: where guidance is measured
+    from (Pipeline.aim, which set_aim moves), as fractions; cfg.guidance.aim when not given.
     """
     scale = min(1.0, cfg.overlay.max_width / image.shape[1])
     if scale < 1.0:
@@ -92,13 +94,15 @@ def render(image: np.ndarray, cfg: Config, *, status: str, phase: str, tracks: l
     else:
         canvas = image.copy()
     height, width = canvas.shape[:2]
-    cx, cy = width // 2, height // 2
+    cy = height // 2
+    aim_x, aim_y = aim if aim is not None else cfg.guidance.aim
+    ax, ay = int(round(aim_x * width)), int(round(aim_y * height))
 
-    # Frame centre and the zone in which the target counts as aligned.
+    # The aim point (the gripper's place in the picture) and the zone in which the target counts as aligned.
     radii = (max(1, int(cfg.guidance.deadzone_enter * width / 2)), max(1, int(cfg.guidance.deadzone_enter * height / 2)))
     aligned = bool(guidance and guidance.aligned)
-    cv2.ellipse(canvas, (cx, cy), radii, 0, 0, 360, _GREEN if aligned else _GREY, 1, cv2.LINE_AA)
-    cv2.drawMarker(canvas, (cx, cy), _GREEN if aligned else _GREY, cv2.MARKER_CROSS, 16, 1)
+    cv2.ellipse(canvas, (ax, ay), radii, 0, 0, 360, _GREEN if aligned else _GREY, 1, cv2.LINE_AA)
+    cv2.drawMarker(canvas, (ax, ay), _GREEN if aligned else _GREY, cv2.MARKER_CROSS, 16, 1)
 
     for tr in tracks:
         if target is not None and tr.track_id == target.track_id:
@@ -113,9 +117,9 @@ def render(image: np.ndarray, cfg: Config, *, status: str, phase: str, tracks: l
         x1, y1, x2, y2 = _pixels(target.bbox, width, height)
         cv2.rectangle(canvas, (x1, y1), (x2, y2), colour, 2)
         if guidance is not None and not guidance.aligned:
-            # The arrow shows the published (smoothed) offset: from the centre towards the target.
-            tip = (int(cx + guidance.dx * width / 2), int(cy + guidance.dy * height / 2))
-            cv2.arrowedLine(canvas, (cx, cy), tip, colour, 2, cv2.LINE_AA, tipLength=0.15)
+            # The arrow shows the published (smoothed) offset: from the aim point towards the target.
+            tip = (int(ax + guidance.dx * width / 2), int(ay + guidance.dy * height / 2))
+            cv2.arrowedLine(canvas, (ax, ay), tip, colour, 2, cv2.LINE_AA, tipLength=0.15)
         else:
             tx, ty = center(target.bbox)
             cv2.circle(canvas, (int(tx * width), int(ty * height)), 4, colour, -1, cv2.LINE_AA)

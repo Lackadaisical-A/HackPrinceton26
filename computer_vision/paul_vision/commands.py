@@ -1,7 +1,8 @@
 """The `command` topic: what the console, voice and send_command ask of vision.
 
-Vision still only assists. A command narrows what it looks for, tells it which task phase the operator is in, or
-teaches it a name (M4), and does nothing else; one that cannot be honoured exactly is logged and ignored, never
+Vision still only assists. A command narrows what it looks for, tells it which task phase the operator is in, moves
+the point guidance is measured from (where the gripper shows in the picture), or teaches it a name (M4), and does
+nothing else; one that cannot be honoured exactly is logged and ignored, never
 guessed at. A label command that is refused is also answered with a spoken sentence (label_manager).
 
 Adding a command: give `CommandHooks` a field for the pipeline method it needs, and register a function with
@@ -24,6 +25,7 @@ log = logging.getLogger(__name__)
 SELECT_TARGET = "select_target"
 CLEAR_TARGET = "clear_target"
 SET_PHASE = "set_phase"
+SET_AIM = "set_aim"         # {"x": 0.52, "y": 0.61}: the gripper's grasp point in the picture, fractions 0..1
 TAG_VISUAL = "tag_visual"   # {"name": "my flask", "bbox": [x1, y1, x2, y2] (0..1) or null = the locked target}
 TAG_TEXT = "tag_text"       # {"name": "my mug", "prompt": "red mug"}; prompt defaults to the name
 UNTAG = "untag"             # {"name": "my flask"}
@@ -48,6 +50,7 @@ class CommandHooks:
     set_preferred_label: Callable[[str | None], None]     # Pipeline.set_preferred_label
     set_phase: Callable[[str], None] | None = None        # Pipeline.set_phase; None where phases are not run
     teach: Callable[[LabelRequest], bool] | None = None   # LabelManager.teach; None where labels cannot change
+    set_aim: Callable[[float, float], None] | None = None  # Pipeline.set_aim; None where guidance is not run
 
     def labels(self) -> Sequence[str]:
         return self.classes() if callable(self.classes) else self.classes
@@ -95,6 +98,20 @@ def _set_phase(payload: dict, hooks: CommandHooks) -> bool:
         return False
     hooks.set_phase(phase)
     log.info("command: phase set to '%s'", phase)
+    return True
+
+
+@_handles(SET_AIM)
+def _set_aim(payload: dict, hooks: CommandHooks) -> bool:
+    x, y = payload.get("x"), payload.get("y")
+    if not all(is_number(v) and 0.0 <= v <= 1.0 for v in (x, y)):
+        log.warning("command %s: x and y must be numbers from 0 to 1, got %r, %r; ignored", SET_AIM, x, y)
+        return False
+    if hooks.set_aim is None:
+        log.warning("command %s: guidance is not run here; ignored", SET_AIM)
+        return False
+    hooks.set_aim(float(x), float(y))
+    log.info("command: aim set to (%.3f, %.3f)", x, y)
     return True
 
 

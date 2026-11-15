@@ -41,6 +41,23 @@ def test_picks_the_most_centred_object_when_confidence_is_equal():
     assert sel.target.track_id == 2
 
 
+def test_picks_the_object_nearest_the_aim_point():
+    tracks = [track(1, cx=0.5, cy=0.5), track(2, cx=0.75, cy=0.8)]
+    assert TargetSelector(CFG, aim=(0.75, 0.8)).update(tracks, t=0.0).target.track_id == 2
+    selector = TargetSelector(CFG)
+    selector.set_aim(0.75, 0.8)
+    assert selector.update(tracks, t=0.0).target.track_id == 2
+
+
+def test_moving_the_aim_keeps_the_locked_target_until_a_rival_wins():
+    selector = TargetSelector(CFG)
+    tracks = [track(1, cx=0.5, cy=0.5), track(2, cx=0.8, cy=0.8)]
+    assert selector.update(tracks, t=0.0).target.track_id == 1
+    selector.set_aim(0.8, 0.8)
+    assert selector.update(tracks, t=0.1).target.track_id == 1                # the switch dwell still applies
+    assert selector.update(tracks, t=0.1 + CFG.switch_dwell_s).target.track_id == 2
+
+
 def test_center_weight_zero_means_confidence_only():
     cfg = dataclasses.replace(CFG, center_weight=0.0)
     sel = TargetSelector(cfg).update([track(1, conf=0.95, cx=0.95, cy=0.95), track(2, conf=0.90)], t=0.0)

@@ -11,10 +11,13 @@ from .types import BBox, Guidance, Track
 DISTANCE_HINTS = ("far", "near", "in_reach")
 
 
-def raw_offset(bbox: BBox) -> tuple[float, float]:
-    """Target centre minus image centre, scaled to -1..1. Positive = right / down."""
+def raw_offset(bbox: BBox, aim: Sequence[float] = (0.5, 0.5)) -> tuple[float, float]:
+    """Target centre minus the aim point (the gripper's place in the picture), scaled to -1..1.
+
+    Positive = right / down. With the default aim this is the offset from the image centre."""
     cx, cy = center(bbox)
-    return clamp((cx - 0.5) * 2.0, -1.0, 1.0), clamp((cy - 0.5) * 2.0, -1.0, 1.0)
+    ax, ay = aim
+    return clamp((cx - ax) * 2.0, -1.0, 1.0), clamp((cy - ay) * 2.0, -1.0, 1.0)
 
 
 def schmitt_level(value: float, bounds: Sequence[float], prev: int | None, hysteresis: float) -> int:
@@ -46,11 +49,24 @@ class GuidanceFilter:
     The smoothing is an exponential moving average with a time constant, so it behaves the same at
     any frame rate. Pass reset=True when the target changes, so guidance jumps to the new target
     instead of gliding there from the old one.
+
+    Offsets are measured from the aim point, `cfg.aim` until `set_aim` moves it.
     """
 
     def __init__(self, cfg: GuidanceConfig, distance: DistanceConfig):
         self._cfg = cfg
         self._distance = distance
+        self._aim = (float(cfg.aim[0]), float(cfg.aim[1]))
+        self.reset()
+
+    @property
+    def aim(self) -> tuple[float, float]:
+        return self._aim
+
+    def set_aim(self, x: float, y: float) -> None:
+        """Measure offsets from (x, y), fractions of the picture. The smoothing restarts, so the offset jumps to
+        the new reference instead of gliding there, and `aligned` is earned again from the new point."""
+        self._aim = (float(x), float(y))
         self.reset()
 
     def reset(self) -> None:
@@ -62,7 +78,7 @@ class GuidanceFilter:
     def update(self, target: Track, t: float, reset: bool = False) -> Guidance:
         if reset:
             self.reset()
-        raw = (*raw_offset(target.bbox), area(target.bbox))
+        raw = (*raw_offset(target.bbox, self._aim), area(target.bbox))
         if self._state is None:
             self._state = raw
         else:

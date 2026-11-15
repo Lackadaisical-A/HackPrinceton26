@@ -112,6 +112,11 @@ onto https://app.netlify.com/drop. Repeat to update it.
 - Wrist camera: the one dark window on the page. The guidance overlay is drawn from vision
   messages: open brackets while steering, a closed box once aligned. When vision data is stale,
   silent or degraded, guidance is hidden and the window says why.
+- Crosshair: the gripper's aim point, the centre of the picture by default. Drag it to where the
+  jaws really close, and vision measures guidance from there (the offset, "aligned", the spoken
+  direction and the haptic cue), by sending `set_aim`. The point is saved in this browser and sent
+  again whenever vision (re)appears, so a restarted vision process picks it up. "Re-centre
+  crosshair", under the picture, or a double-click puts it back.
 - Touch link: the four gripper pads and the four armband motors, the wire between them (drawn open
   when haptics are off), and 12-second traces of grip and haptic output. The haptics switch lives
   here and is locked while a trial runs.
@@ -140,6 +145,9 @@ latest message, send commands, read the message formats, and run the simulator's
 | `?`           | Show the shortcut list                         |
 
 Shortcuts are ignored while typing in a field or while a dialog is open.
+
+With the camera crosshair focused (Tab to it), the arrow keys move it by 1 % of the picture
+(Shift: 5 %) and `Home` re-centres it. The point is sent to vision 200 ms after the last key.
 
 ## Data sources
 
@@ -198,8 +206,8 @@ command {"t":1731542400.2,"type":"select_target","label":"pill bottle"}
 
 "Contract" topics are defined by an existing module. "Proposed" topics were defined by this
 frontend so the screens had something to show. Nothing publishes them yet, and their shapes are
-open to change. Of the commands, `select_target`, `clear_target` and `set_phase` are contract;
-`set_haptics` is proposed.
+open to change. Of the commands, `select_target`, `clear_target`, `set_phase`, `set_aim` and the
+label commands are contract; `set_haptics` is proposed.
 
 The types, validators and example frames are in `src/telemetry/contracts.ts`, and the Signals page
 shows the same information in the app. Frames that fail validation are counted and dropped, never

@@ -57,10 +57,28 @@ def test_select_and_clear_target_payloads():
     ("tag_visual", None, "needs a name"),
     ("tag_text", "  ", "needs a name"),
     ("untag", None, "needs a name"),
+    ("set_aim", None, "set_aim needs x and y"),
+    ("set_aim", "0.5", "set_aim needs x and y"),
+    ("set_aim", "0.5 1.2", "set_aim needs x and y"),
+    ("set_aim", "left top", "set_aim needs x and y"),
+    ("set_aim", "0.1 0.2 0.3", "set_aim needs x and y"),
 ])
 def test_a_command_vision_would_ignore_is_refused_before_sending(kind, value, message):
     with pytest.raises(ValueError, match=message):
         build_command(kind, value, CLASSES)
+
+
+@pytest.mark.parametrize("value", ["0.6 0.55", "0.6,0.55", "0.6, 0.55"])
+def test_set_aim_payload(value):
+    assert {k: v for k, v in build_command("set_aim", value, CLASSES).items() if k != "t"} == {
+        "type": "set_aim", "x": 0.6, "y": 0.55}
+
+
+def test_set_aim_takes_two_arguments_on_the_command_line(monkeypatch, capsys):
+    payloads = []
+    monkeypatch.setattr(send_command, "send", lambda endpoint, payload, wait_s: payloads.append(payload) or 1)
+    assert main(["set_aim", "0.6", "0.55", "--config", CONFIG]) == 0
+    assert (payloads[0]["x"], payloads[0]["y"]) == (0.6, 0.55)
 
 
 def test_tag_payloads():

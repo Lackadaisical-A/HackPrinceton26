@@ -40,6 +40,18 @@ def test_render_draws_the_target_other_tracks_and_the_arrow(shipped_cfg, image):
             assert np.count_nonzero(drawn != plain) > 500
 
 
+def test_the_crosshair_is_drawn_at_the_aim_point(shipped_cfg, image):
+    def marked(canvas, x: float, y: float) -> bool:
+        h, w = canvas.shape[:2]
+        return np.any(canvas[int(y * h) - 2:int(y * h) + 3, int(x * w) - 2:int(x * w) + 3] != 90)
+
+    centred = render(image, shipped_cfg, status="no_target", phase="search")
+    moved = render(image, shipped_cfg, status="no_target", phase="search", aim=(0.7, 0.75))
+    assert marked(centred, 0.5, 0.5) and not marked(centred, 0.7, 0.75)
+    assert marked(moved, 0.7, 0.75) and not marked(moved, 0.5, 0.5)
+    assert np.array_equal(centred, render(image, shipped_cfg, status="no_target", phase="search", aim=(0.5, 0.5)))
+
+
 def test_a_small_frame_is_not_upscaled(shipped_cfg):
     cfg = dataclasses.replace(shipped_cfg, overlay=OverlayConfig(enabled=True, max_width=960))
     small = np.zeros((240, 320, 3), np.uint8)

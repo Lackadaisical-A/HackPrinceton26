@@ -126,6 +126,7 @@ class GuidanceConfig:
     smoothing_tau_s: float
     deadzone_enter: float
     deadzone_exit: float
+    aim: list[float]  # [x, y]: where the gripper's grasp point shows in the picture, 0..1; set_aim moves it
 
 
 @dataclass(frozen=True)
@@ -511,6 +512,8 @@ def validate(cfg: Config) -> None:
             "need detector.conf_min <= selection.conf_keep <= selection.conf_lock")
     require(cfg.guidance.deadzone_enter <= cfg.guidance.deadzone_exit,
             "need guidance.deadzone_enter <= guidance.deadzone_exit")
+    require(len(cfg.guidance.aim) == 2 and all(0 <= v <= 1 for v in cfg.guidance.aim),
+            "guidance.aim must be [x, y], both in [0, 1]")
     require(0 <= cfg.distance.hysteresis < 1, "distance.hysteresis must be in [0, 1)")
     require("default" in cfg.distance.thresholds, "distance.thresholds needs a `default` entry")
     for label, th in cfg.distance.thresholds.items():

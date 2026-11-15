@@ -1,4 +1,5 @@
-import { DEADZONE, LIMITS } from '../../config'
+import { AIM_DEFAULT, DEADZONE, LIMITS } from '../../config'
+import type { Aim } from '../../lib/aim'
 import { clamp, quatFromEuler } from '../../lib/math'
 import type { TelemetryBus } from '../bus'
 import type { Command, HapticCue, Phase, Topic, VisionMessage } from '../contracts'
@@ -30,6 +31,7 @@ export class Simulator implements Source {
   private readonly due = Object.fromEntries(TOPICS.map((t) => [t, 0])) as Record<Topic, number>
 
   private preferred: string | null = null
+  private aim: Aim = { ...AIM_DEFAULT }
   private hapticsEnabled = true
   private aligned = false
   private frameId = 0
@@ -76,6 +78,14 @@ export class Simulator implements Source {
       case 'set_phase':
         this.jumpTo(PHASE_STARTS[command.phase])
         break
+      case 'set_aim': {
+        // As vision does: a point off the picture is refused, not guessed at.
+        const inside = (v: number) => Number.isFinite(v) && v >= 0 && v <= 1
+        if (!inside(command.x) || !inside(command.y)) return false
+        this.aim = { x: command.x, y: command.y }
+        this.aligned = false // earned again from the new point, as vision's smoothing starts over
+        break
+      }
       case 'tag_visual':
       case 'tag_text':
       case 'untag':
@@ -122,7 +132,7 @@ export class Simulator implements Source {
     const time = (nowMs - this.originMs) / 1000
     const sinceSqueezeS = this.squeezeAtMs === null ? null : (nowMs - this.squeezeAtMs) / 1000
     if (sinceSqueezeS !== null && sinceSqueezeS > 3) this.squeezeAtMs = null
-    const frame = scenarioAt(time, { preferred: this.preferred, sinceSqueezeS })
+    const frame = scenarioAt(time, { preferred: this.preferred, sinceSqueezeS, aim: this.aim })
     this.frame = frame
 
     const offset = Math.hypot(frame.dx, frame.dy)

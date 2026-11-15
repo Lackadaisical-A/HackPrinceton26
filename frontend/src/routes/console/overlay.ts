@@ -1,4 +1,5 @@
 import { DEADZONE } from '../../config'
+import type { Aim } from '../../lib/aim'
 import { prefersReducedMotion } from '../../render/scheduler'
 import { FONT_SANS } from '../../render/theme'
 import type { BBox, VisionMessage } from '../../telemetry/contracts'
@@ -35,6 +36,8 @@ function ink(ctx: CanvasRenderingContext2D, width: number, alpha: number, trace:
 
 /**
  * @param usable true only when guidance may be shown (status "ok" and fresh)
+ * @param aim where the gripper shows in the picture: the crosshair and the aligned zone are drawn there, as vision
+ *   measures guidance from it (`set_aim`)
  */
 export function drawOverlay(
   ctx: CanvasRenderingContext2D,
@@ -44,9 +47,10 @@ export function drawOverlay(
   usable: boolean,
   memory: OverlayMemory,
   dtMs: number,
+  aim: Aim,
 ): void {
-  const cx = w / 2
-  const cy = h / 2
+  const cx = aim.x * w
+  const cy = aim.y * h
   const target = usable ? (message?.target ?? null) : null
   const guidance = usable ? (message?.guidance ?? null) : null
   const aligned = guidance?.aligned ?? false
@@ -56,7 +60,7 @@ export function drawOverlay(
   ctx.lineJoin = 'round'
   ctx.setLineDash([])
 
-  // The gripper's centre line, and the zone inside which the target counts as aligned.
+  // The gripper's aim point, and the zone inside which the target counts as aligned.
   const rx = (w * DEADZONE.enter) / 2
   const ry = (h * DEADZONE.enter) / 2
   if (!aligned) ctx.setLineDash([3, 5])

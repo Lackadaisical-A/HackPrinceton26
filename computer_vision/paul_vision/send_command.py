@@ -3,6 +3,8 @@
   set_phase <phase>       one of search, approach, grasp, carry, place, release
   select_target <label>   one of detector.classes or a tag name (a name with a space may be quoted or not)
   clear_target            any object can be the target again
+  set_aim <x> <y>         measure guidance from this point of the picture (0..1 each; where the gripper shows);
+                          set_aim 0.5 0.5 is the frame centre
   tag_visual <name> [--bbox x1,y1,x2,y2]
                           learn what is in the box (0..1 of the picture) as <name>; without --bbox, the locked target
   tag_text <name> [--prompt "red mug"]
@@ -31,7 +33,7 @@ from typing import Sequence
 import zmq
 
 from . import clock
-from .commands import CLEAR_TARGET, SELECT_TARGET, SET_PHASE, TAG_TEXT, TAG_VISUAL, UNTAG
+from .commands import CLEAR_TARGET, SELECT_TARGET, SET_AIM, SET_PHASE, TAG_TEXT, TAG_VISUAL, UNTAG
 from .config import DEFAULT_CONFIG_PATH, ConfigError, load_config
 from .labels import library_dir, read_tag_names
 from .messages import TOPIC_COMMAND, encode
@@ -48,7 +50,7 @@ class EndpointBusy(Exception):
     """Another process holds the port."""
 
 
-COMMANDS = (SET_PHASE, SELECT_TARGET, CLEAR_TARGET, TAG_VISUAL, TAG_TEXT, UNTAG)
+COMMANDS = (SET_PHASE, SELECT_TARGET, CLEAR_TARGET, SET_AIM, TAG_VISUAL, TAG_TEXT, UNTAG)
 
 
 def parse_bbox(text: str) -> list[float]:
@@ -60,6 +62,17 @@ def parse_bbox(text: str) -> list[float]:
     if len(box) != 4 or not (0.0 <= box[0] < box[2] <= 1.0 and 0.0 <= box[1] < box[3] <= 1.0):
         raise ValueError(f"--bbox needs x1,y1,x2,y2 with each value 0..1, x1 < x2 and y1 < y2 (got {text!r})")
     return box
+
+
+def parse_aim(text: str | None) -> tuple[float, float]:
+    """`x y` (or `x,y`), each 0..1 of the picture. Raises ValueError."""
+    try:
+        point = [float(part) for part in (text or "").replace(",", " ").split()]
+    except ValueError:
+        point = []
+    if len(point) != 2 or not all(0.0 <= v <= 1.0 for v in point):
+        raise ValueError(f"set_aim needs x and y, each 0..1 of the picture (got {text!r})")
+    return point[0], point[1]
 
 
 def build_command(kind: str, value: str | None, classes: Sequence[str], *, bbox: str | None = None,
@@ -91,6 +104,9 @@ def build_command(kind: str, value: str | None, classes: Sequence[str], *, bbox:
             raise ValueError(f"select_target needs one of detector.classes or a tag name: {', '.join(classes)} "
                              f"(got {value!r})")
         return {"t": clock.now(), "type": SELECT_TARGET, "label": value}
+    if kind == SET_AIM:
+        x, y = parse_aim(value)
+        return {"t": clock.now(), "type": SET_AIM, "x": x, "y": y}
     if kind == CLEAR_TARGET:
         if value is not None:
             raise ValueError(f"clear_target takes no argument (got {value!r})")
@@ -146,7 +162,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m paul_vision.send_command", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=COMMANDS)
-    parser.add_argument("value", nargs="*", help="the phase, the label, or the tag name")
+    parser.add_argument("value", nargs="*", help="the phase, the label, the tag name, or set_aim's x and y")
     parser.add_argument("--bbox", help="tag_visual: x1,y1,x2,y2 in 0..1 of the picture (default: the locked target)")
     parser.add_argument("--prompt", help="tag_text: what to look for (default: the name)")
     parser.add_argument("--endpoint", help="bind here (default: the last entry of transport.command_sub)")

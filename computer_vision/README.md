@@ -104,7 +104,7 @@ Every message has exactly these eight keys:
 | `status` | `ok`: target locked. `low_confidence`: something is visible but not sure enough to lock. `no_target`: nothing that may be the target in this phase is visible. `degraded`: no fresh frames. |
 | `phase` | `search`, `approach`, `grasp`, `carry`, `place` or `release`; see "Phases". A `degraded` heartbeat carries the last phase that was published. |
 | `target` | `null` unless `status` is `ok`. `label` is a name from `detector.classes`, a name the operator taught (see "Teaching vision a name"), or `drop station`. `source` is `yolo` for objects and `aruco` for the station marker. `bbox` is `[x1, y1, x2, y2]`, each 0 to 1, always with `x1 < x2` and `y1 < y2`. `confidence` is 0 to 1: the detector's score for an object, OpenCV's rating of the read for a marker. |
-| `guidance` | `null` unless `status` is `ok`. `dx`, `dy` are −1 to 1, target centre minus frame centre; positive is right and down in gripper terms. `distance_hint` is `far`, `near` or `in_reach`. `aligned` is true inside the deadzone. |
+| `guidance` | `null` unless `status` is `ok`. `dx`, `dy` are −1 to 1, target centre minus the aim point (where the gripper shows in the picture: the frame centre unless `guidance.aim` or `set_aim` moves it); positive is right and down in gripper terms. `distance_hint` is `far`, `near` or `in_reach`. `aligned` is true inside the deadzone. |
 | `summary` | A sentence to speak, or `null` when there is nothing new to say. Vision's answers to the label commands ("Learning my flask.", "My flask is ready.") arrive here too, with the next frame's message. An answer whose next frame comes more than `watchdog.stall_timeout_s` (0.5 s) later (the feed stalled or was paused) is only logged, not sent. |
 | `alert` | `null`, or `"dropped"` for `phase.alert_hold_s` (1.0 s) after the object was let go during `carry`; see "The `dropped` alert". Heartbeats always carry `null`. |
 
@@ -181,6 +181,7 @@ Vision reads the `command` topic from every endpoint in `transport.command_sub`.
 | `select_target` | `{"t": 1731542400.2, "type": "select_target", "label": "pill bottle"}` | Only objects with this label can be the target. The label must be one of `detector.classes` or a name that has been taught and is live now (see "Teaching vision a name"); anything else is logged and ignored. |
 | `clear_target` | `{"t": 1731542400.2, "type": "clear_target"}` | Any object can be the target again. |
 | `set_phase` | `{"t": 1731542400.2, "type": "set_phase", "phase": "carry"}` | Forces the phase from the next frame (see "Phases"). The phase must be one of the six; anything else is logged and ignored. |
+| `set_aim` | `{"t": 1731542400.2, "type": "set_aim", "x": 0.52, "y": 0.61}` | Measures guidance from this point of the picture (fractions of its width and height) instead of `guidance.aim`: `dx`, `dy`, `aligned`, the spoken direction, and which object is nearest for target picking. Use it when the gripper's grasp point does not show at the frame centre. The target is kept; its smoothing starts again from the new point. `x` and `y` must be numbers from 0 to 1; anything else is logged and ignored. Kept until vision stops (a camera switch keeps it). |
 | `tag_visual` | `{"t": 1731542400.2, "type": "tag_visual", "name": "my flask", "bbox": [0.31, 0.22, 0.45, 0.61]}` | Learns what is in the box as `name`. `bbox` is `[x1, y1, x2, y2]`, each 0 to 1 of the picture; `null` means the locked target's box. |
 | `tag_text` | `{"t": 1731542400.2, "type": "tag_text", "name": "my mug", "prompt": "white mug"}` | Learns to look for the description `prompt` as `name`. Without `prompt`, the name itself is the description. |
 | `untag` | `{"t": 1731542400.2, "type": "untag", "name": "my flask"}` | Forgets everything taught as `name`. |
@@ -195,6 +196,7 @@ To send one by hand:
 uv run python -m paul_vision.send_command set_phase carry
 uv run python -m paul_vision.send_command select_target pill bottle     # quotes around the label are optional
 uv run python -m paul_vision.send_command clear_target
+uv run python -m paul_vision.send_command set_aim 0.52 0.61            # x y, fractions of the picture
 uv run python -m paul_vision.send_command tag_visual my flask           # learn the locked target as "my flask"
 uv run python -m paul_vision.send_command tag_visual my flask --bbox 0.31,0.22,0.45,0.61
 uv run python -m paul_vision.send_command tag_text my mug --prompt "white mug"
@@ -408,6 +410,7 @@ npm run dev                                     # in ../frontend; then Signals, 
 - **Camera choice.** The same server lists the cameras (`GET /sources`) and switches to another (`POST /source`), for pages served from this computer only. The switch happens between two frames; the phase starts again at `search`. Not available with `--record`.
 - **Messages.** The bridge relays the `vision` topic to the console over a WebSocket.
 - **Commands.** The console's target buttons send `select_target` and `clear_target`, and its phase control sends `set_phase`, through the bridge, which binds `tcp://127.0.0.1:5557`, the first entry of `transport.command_sub`. The bridge passes on any command with a string `type`, so the label commands need nothing there.
+- **Crosshair.** The crosshair and the dashed aligned zone on the camera view can be dragged to where the gripper's grasp point shows in the picture (or moved with the arrow keys once focused; Home or a double-click puts it back in the centre). Letting go sends `set_aim`, so the guidance, the arrow, the voice and the haptics are measured from there. The console keeps the point between sessions and sends it again whenever vision's messages start (after Connect, or after vision restarts behind a running bridge).
 - **Names.** On the Signals page, the "Names" group takes a name and an optional description and sends `tag_visual` for the locked target (`bbox` null), `tag_text`, `untag`, and `select_target` for a tag (the target buttons know only `detector.classes`). Under the camera view, **Draw box** lets the operator drag a box on the picture and sends `tag_visual` with it, as fractions of the picture (the picture fills the camera window and is not mirrored, so the box goes out as drawn). Vision's answers ("Learning ...", "... is ready.", refusals) come back in `summary`, which the console shows.
 - **Alert.** `alert: "dropped"` raises "Object may have dropped" on the camera view, held for the console's alert time after the alert ends.
 
@@ -814,7 +817,7 @@ paul_vision/
   pressure_bridge.py   serial lines from the pad microcontroller -> pressure (needs pyserial)
   messages.py          the vision and pressure messages: build, encode, decode, validate; the robot topic name
   transport.py         publisher thread with the stall watchdog; Subscriber
-  commands.py          the command topic: select_target, clear_target, set_phase, tag_visual, tag_text, untag
+  commands.py          the command topic: select_target, clear_target, set_phase, set_aim, tag_visual, tag_text, untag
   send_command.py      sends one command from a terminal
   voice.py             the voice process: utterances as text -> commands; the --listen stand-in
   stream.py            the camera picture for the web console, MJPEG over HTTP

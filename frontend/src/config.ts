@@ -73,6 +73,15 @@ export const LABEL_LIMITS = { nameChars: 40, promptChars: 100, minBoxSide: 0.04 
 /** Mirrors guidance.deadzone_enter / deadzone_exit in computer_vision/config.yaml. */
 export const DEADZONE = { enter: 0.1, exit: 0.14 } as const
 
+/**
+ * Mirrors guidance.aim in computer_vision/config.yaml: where the gripper's grasp point shows in the camera picture, as
+ * fractions of its width and height. The operator can drag the crosshair elsewhere; `set_aim` tells vision.
+ */
+export const AIM_DEFAULT = { x: 0.5, y: 0.5 } as const
+
+/** The crosshair stays at least this far (a fraction of the picture) from each edge, so it can always be grabbed. */
+export const AIM_LIMIT = 0.05
+
 /** Where the ZMQ-to-WebSocket bridge listens (`bridge/`, `python -m paul_bridge`). */
 export const DEFAULT_WS_URL = 'ws://127.0.0.1:8765'
 

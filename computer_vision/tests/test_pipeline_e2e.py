@@ -166,6 +166,28 @@ def test_a_confident_detection_becomes_the_target_with_guidance_towards_it(cfg):
     assert msg["guidance"]["aligned"] is False
 
 
+def test_set_aim_measures_guidance_from_the_new_point_at_once(cfg):
+    pipeline = Pipeline(cfg, FakeDetector([det("cup", 0.9, cx=0.3, cy=0.7)]))
+    for i in range(10):
+        msg = pipeline.process(frame(i + 1, 100.0 + i / 30)).message
+    assert msg["guidance"]["aligned"] is False
+    pipeline.set_aim(0.3, 0.7)  # the gripper shows where the cup is
+    msg = pipeline.process(frame(11, 100.0 + 10 / 30)).message
+    validate_vision(msg)
+    assert msg["target"]["track_id"] == 1  # the target is kept
+    assert (msg["guidance"]["dx"], msg["guidance"]["dy"]) == pytest.approx((0.0, 0.0), abs=1e-3)
+    assert msg["guidance"]["aligned"] is True
+    pipeline.reset()  # a camera switch does not move the gripper in the picture
+    assert pipeline.aim == (0.3, 0.7)
+
+
+def test_set_aim_off_the_picture_is_refused_by_the_pipeline(cfg):
+    pipeline = Pipeline(cfg, FakeDetector([]))
+    with pytest.raises(ValueError):
+        pipeline.set_aim(1.5, 0.5)
+    assert pipeline.aim == (0.5, 0.5)
+
+
 def test_a_missed_detection_is_coasted_over_then_the_target_is_dropped(cfg):
     assert cfg.selection.coast_s > 0
     pipeline = Pipeline(cfg, FakeDetector(CUP_LEFT, CUP_LEFT, []))
@@ -265,6 +287,16 @@ def test_commands_change_the_target_while_the_loop_runs(cfg):
         run(cfg, FakeSource([0.001] * 12), FakeDetector(both), pub, commands=commands,
             on_result=lambda frame, result: labels.append((result.message["target"] or {}).get("label")))
     assert labels == ["bottle"] * 3 + ["cup"] * 6 + ["bottle"] * 3
+
+
+def test_a_set_aim_command_moves_the_guidance_while_the_loop_runs(cfg):
+    commands = ScriptedCommands([], [], [], [{"type": "set_aim", "x": 0.3, "y": 0.5}])  # before frame 4
+    offsets = []
+    with VisionPublisher(ANY_PORT, send_hwm=20, watchdog=cfg.watchdog) as pub:
+        run(cfg, FakeSource([0.001] * 6), FakeDetector(CUP_LEFT), pub, commands=commands,
+            on_result=lambda frame, result: offsets.append(result.message["guidance"]["dx"]))
+    assert offsets[:3] == pytest.approx([-0.4] * 3, abs=0.01)  # from the frame centre
+    assert offsets[3:] == pytest.approx([0.0] * 3, abs=0.01)   # from the new aim, at once
 
 
 def test_the_camera_stream_shows_the_frames_the_loop_processed(cfg):

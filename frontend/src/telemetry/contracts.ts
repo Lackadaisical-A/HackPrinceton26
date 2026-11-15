@@ -38,7 +38,10 @@ export interface VisionTarget {
 }
 
 export interface VisionGuidance {
-  /** Target centre minus frame centre, -1 to 1. Positive is right and down in gripper terms. */
+  /**
+   * Target centre minus the aim point (where the gripper shows: the frame centre unless guidance.aim or set_aim moves
+   * it), -1 to 1. Positive is right and down in gripper terms.
+   */
   dx: number
   dy: number
   distance_hint: DistanceHint
@@ -122,6 +125,8 @@ export type Command =
   | { type: 'select_target'; label: string }
   | { type: 'clear_target' }
   | { type: 'set_phase'; phase: Phase }
+  /** Measure guidance from this point of the picture (fractions 0 to 1): where the gripper's grasp point shows. */
+  | { type: 'set_aim'; x: number; y: number }
   /** Teach a name from a box on the picture (normalised corners), or from the locked target when bbox is null. */
   | { type: 'tag_visual'; name: string; bbox: BBox | null }
   /** Teach a name from a written description; the prompt defaults to the name. */
@@ -187,6 +192,7 @@ export const COMMAND_EXAMPLES: { frame: string; standing: 'contract' | 'proposed
   { frame: 'command {"t":1731542400.2,"type":"select_target","label":"pill bottle"}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"clear_target"}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"set_phase","phase":"search"}', standing: 'contract' },
+  { frame: 'command {"t":1731542400.2,"type":"set_aim","x":0.52,"y":0.61}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"tag_visual","name":"my flask","bbox":[0.3,0.25,0.55,0.7]}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"tag_visual","name":"my flask","bbox":null}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"tag_text","name":"pill bottle","prompt":"small orange pill bottle"}', standing: 'contract' },

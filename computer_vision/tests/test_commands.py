@@ -28,13 +28,14 @@ class Recorder:
 class Hooks:
     """CommandHooks over recorders, so a test can see which hook a command called."""
 
-    def __init__(self, with_phase: bool = True):
-        self.selector, self.phases = Recorder(), Recorder()
-        self.hooks = CommandHooks(CLASSES, self.selector, self.phases if with_phase else None)
+    def __init__(self, with_phase: bool = True, with_aim: bool = True):
+        self.selector, self.phases, self.aims = Recorder(), Recorder(), []
+        self.hooks = CommandHooks(CLASSES, self.selector, self.phases if with_phase else None,
+                                  set_aim=(lambda x, y: self.aims.append((x, y))) if with_aim else None)
 
     @property
     def calls(self) -> list:
-        return self.selector.calls + self.phases.calls
+        return self.selector.calls + self.phases.calls + self.aims
 
 
 # --- applying a command (pure) ---
@@ -85,6 +86,40 @@ def test_set_phase_where_phases_are_not_run_is_ignored(caplog):
     assert not apply_command({"type": "set_phase", "phase": "carry"}, h.hooks)
     assert h.calls == []
     assert "phases are not run here" in caplog.text
+
+
+@pytest.mark.parametrize("x, y", [(0.52, 0.61), (0, 1), (1.0, 0.0), (0.5, 0.5)])
+def test_set_aim_moves_the_aim_point(x, y, caplog):
+    caplog.set_level(logging.INFO)
+    h = Hooks()
+    assert apply_command({"t": 1.0, "type": "set_aim", "x": x, "y": y}, h.hooks)
+    assert h.aims == [(x, y)] and h.selector.calls == [] and h.phases.calls == []
+    assert all(type(v) is float for v in h.aims[0])
+    assert "aim set to" in caplog.text
+
+
+@pytest.mark.parametrize("payload", [
+    {"type": "set_aim", "x": 1.2, "y": 0.5},
+    {"type": "set_aim", "x": 0.5, "y": -0.01},
+    {"type": "set_aim", "x": "0.5", "y": 0.5},
+    {"type": "set_aim", "x": True, "y": 0.5},     # a bool is not a number here
+    {"type": "set_aim", "x": 0.5},
+    {"type": "set_aim", "x": [0.5], "y": 0.5},
+    {"type": "set_aim", "x": float("nan"), "y": 0.5},
+    {"type": "set_aim", "x": int(HUGE), "y": 0.5},
+])
+def test_set_aim_off_the_picture_or_not_a_number_is_ignored(payload, caplog):
+    h = Hooks()
+    assert not apply_command(payload, h.hooks)
+    assert h.calls == []
+    assert "x and y must be numbers from 0 to 1" in caplog.text
+
+
+def test_set_aim_where_guidance_is_not_run_is_ignored(caplog):
+    h = Hooks(with_aim=False)
+    assert not apply_command({"type": "set_aim", "x": 0.5, "y": 0.5}, h.hooks)
+    assert h.calls == []
+    assert "guidance is not run here" in caplog.text
 
 
 @pytest.mark.parametrize("payload", [

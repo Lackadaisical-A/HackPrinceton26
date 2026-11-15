@@ -57,7 +57,7 @@ class Pipeline:
         self._detector = detector
         self._now = now
         self._tracker = IouTracker(cfg.tracker)
-        self._selector = TargetSelector(cfg.selection)
+        self._selector = TargetSelector(cfg.selection, aim=(cfg.guidance.aim[0], cfg.guidance.aim[1]))
         self._guidance = GuidanceFilter(cfg.guidance, cfg.distance)
         self._summarizer = Summarizer(cfg.summary)
         self._phase = PhaseMachine(cfg.phase)
@@ -108,6 +108,21 @@ class Pipeline:
     def set_phase(self, phase: str) -> None:
         """The `set_phase` command. Raises ValueError for an unknown phase; applied with the next frame."""
         self._phase.force(phase)
+
+    @property
+    def aim(self) -> tuple[float, float]:
+        """Where the gripper's grasp point shows in the picture (fractions); guidance is measured from here."""
+        return self._guidance.aim
+
+    def set_aim(self, x: float, y: float) -> None:
+        """The `set_aim` command: measure guidance and target picking from (x, y). The target is kept; its smoothed
+        guidance starts over from the new point, so no offset from the old point is held while coasting. Kept across
+        reset(): the gripper does not move in the picture when the camera is switched."""
+        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+            raise ValueError(f"aim ({x}, {y}) is outside the picture")
+        self._selector.set_aim(x, y)
+        self._guidance.set_aim(x, y)
+        self._last_guidance = None
 
     def reset(self) -> None:
         """Start over completely, phase included (a different camera or source)."""
@@ -312,7 +327,7 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
         pipeline.set_preferred_label(preferred_label)
     hooks = CommandHooks(classes=labels.known_labels if labels is not None else cfg.detector.classes,
                          set_preferred_label=pipeline.set_preferred_label, set_phase=pipeline.set_phase,
-                         teach=labels.teach if labels is not None else None)
+                         teach=labels.teach if labels is not None else None, set_aim=pipeline.set_aim)
     if labels is not None:
         labels.attach(say=pipeline.announce, changed=pipeline.labels_changed)
     if pressure is None:
@@ -348,7 +363,7 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
                               target=result.target, guidance=result.guidance, coasting=result.coasting,
                               summary=last_summary, fps=metrics.fps, latency_ms=metrics.latency_ms, banner=banner,
                               pressure_feed=pressure is not None, grip_source=grip_source,
-                              contact=result.contact, alert=msg["alert"], forced=result.forced)
+                              contact=result.contact, alert=msg["alert"], forced=result.forced, aim=pipeline.aim)
 
     def handle(action: str | None) -> bool:
         """Apply a key press; True means quit."""

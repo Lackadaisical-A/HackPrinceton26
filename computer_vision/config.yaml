@@ -114,7 +114,7 @@ tracker:
 selection:
   conf_lock: 0.40           # confidence needed to acquire a target
   conf_keep: 0.25           # confidence needed to keep the current target
-  center_weight: 1.0        # score = confidence x (1 - center_weight x distance from centre); 0 = confidence only
+  center_weight: 1.0        # score = confidence x (1 - center_weight x distance from guidance.aim); 0 = confidence only
   switch_margin: 0.25       # a rival must score this fraction higher than the current target...
   switch_dwell_s: 0.5       # ...continuously for this long before the target switches
   coast_s: 0.15             # hold the last guidance this long when the target misses a frame (0 = off)
@@ -124,6 +124,9 @@ guidance:
   smoothing_tau_s: 0.12     # EMA time constant for dx, dy and box area (0 = no smoothing)
   deadzone_enter: 0.10      # |offset| at or below this turns `aligned` on
   deadzone_exit: 0.14       # |offset| above this turns `aligned` off again
+  # Where the gripper's grasp point shows in the picture, [x, y] as fractions of width and height. Offsets are
+  # measured from here, not from the frame centre. The console's draggable crosshair changes it with set_aim.
+  aim: [0.5, 0.5]
 
 distance:
   hysteresis: 0.15          # relative margin around each threshold before the hint changes

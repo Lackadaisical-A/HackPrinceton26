@@ -10,7 +10,7 @@ from .geometry import center
 from .phase import DOMAIN_OBJECTS, DOMAIN_STATION
 from .types import STATUS_LOW_CONFIDENCE, STATUS_NO_TARGET, STATUS_OK, Track
 
-_HALF_DIAGONAL = math.hypot(0.5, 0.5)  # centre-to-corner distance of the normalized frame
+_HALF_DIAGONAL = math.hypot(0.5, 0.5)  # centre-to-corner distance of the normalized frame; the off-aim scale
 
 
 @dataclass(frozen=True)
@@ -32,11 +32,15 @@ class TargetSelector:
     detector found (never a station marker), narrowed by the preferred label; in `station`, only the drop
     station's marker. The pick station is never a target. Status counts candidates of the domain only, so a cup
     in view during carry is `no_target`, not `low_confidence`.
+
+    `center_weight` favours objects near the aim point (the gripper's place in the picture, guidance.aim), which is
+    the frame centre unless `set_aim` moves it.
     """
 
-    def __init__(self, cfg: SelectionConfig):
+    def __init__(self, cfg: SelectionConfig, aim: tuple[float, float] = (0.5, 0.5)):
         self._cfg = cfg
         self._preferred = cfg.preferred_label
+        self._aim = (float(aim[0]), float(aim[1]))
         self.domain = DOMAIN_OBJECTS
         self.reset()
 
@@ -66,6 +70,11 @@ class TargetSelector:
                 and self._current.label != label):
             self.reset()
 
+    def set_aim(self, x: float, y: float) -> None:
+        """Score candidates by their distance from (x, y). The current target is kept: moving the crosshair is
+        not a reason to drop what is being steered to; a rival still has to win by the margin and the dwell."""
+        self._aim = (float(x), float(y))
+
     def candidates(self, tracks: list[Track]) -> list[Track]:
         """The tracks that may be the target in the current domain."""
         if self.domain == DOMAIN_STATION:
@@ -75,8 +84,8 @@ class TargetSelector:
 
     def score(self, track: Track) -> float:
         cx, cy = center(track.bbox)
-        off_center = min(1.0, math.hypot(cx - 0.5, cy - 0.5) / _HALF_DIAGONAL)
-        return track.confidence * (1.0 - self._cfg.center_weight * off_center)
+        off_aim = min(1.0, math.hypot(cx - self._aim[0], cy - self._aim[1]) / _HALF_DIAGONAL)
+        return track.confidence * (1.0 - self._cfg.center_weight * off_aim)
 
     def update(self, tracks: list[Track], t: float) -> Selection:
         cfg = self._cfg
