@@ -1,7 +1,50 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Link } from 'react-router'
 import { Button } from '../../ui/Button'
-import { INPUT_CLASS } from '../../ui/Field'
 import { cameraControlUrl, readCameraResponse, type CameraSources } from './cameraSources'
+
+/** A compact select for the slim bar under the camera. */
+const SELECT_CLASS =
+  'h-7 min-w-44 max-w-full flex-initial rounded-sm border border-rule bg-plate px-2 text-xs text-ink ' +
+  'transition-[border-color,box-shadow] duration-150 hover:border-rule-strong/60 ' +
+  'focus:border-ink focus:shadow-[0_0_0_3px_var(--touch-200)] focus-visible:outline-none ' +
+  'disabled:cursor-not-allowed disabled:text-ink-3 disabled:hover:border-rule'
+
+function IconRefresh() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71" />
+      <path d="M13.25 2.5v2.75H10.5" />
+    </svg>
+  )
+}
+
+/** One slim row: label, select, refresh, status note. Wraps the note below on narrow screens. */
+function CameraBar({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <label htmlFor={id} className="text-xs font-medium text-ink-3">Camera</label>
+      {children}
+    </div>
+  )
+}
+
+function OfflineCameraSelector() {
+  const id = useId()
+  const noteId = useId()
+  return (
+    <CameraBar id={id}>
+      <select id={id} className={SELECT_CLASS} aria-describedby={noteId} disabled value="">
+        <option value="">Live bridge only</option>
+      </select>
+      <p id={noteId} className="min-w-0 flex-1 basis-40 truncate text-xs text-ink-3">
+        <Link to="/signals" className="font-medium text-ink-2 underline underline-offset-2">Connect to the live bridge in Signals</Link>
+        {' '}to choose a camera
+      </p>
+    </CameraBar>
+  )
+}
 
 function LiveCameraSelector({ url }: { url: string }) {
   const id = useId()
@@ -75,31 +118,24 @@ function LiveCameraSelector({ url }: { url: string }) {
       : status ? `Active: ${status.active_name}` : 'Finding available cameras…')
 
   return (
-    <div className="mb-2 rounded-md border border-rule bg-plate p-3">
-      <div className="flex items-end gap-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <label htmlFor={id} className="text-sm font-medium text-ink">Camera source</label>
-          <select id={id} className={INPUT_CLASS} aria-describedby={noteId}
-            value={status?.active_id ?? ''}
-            disabled={busy || !!pending || !!error || !status?.can_switch || !status.sources.length}
-            onChange={(event) => actions.current.select(event.target.value)}>
-            {!status && <option value="">Finding cameras…</option>}
-            {missing && <option value={status.active_id ?? ''} disabled>{status.active_name} (current)</option>}
-            {status?.sources.map((source) => <option key={source.id} value={source.id}>{source.name} · {source.index}</option>)}
-          </select>
-        </div>
-        <Button disabled={busy || !!pending} onClick={() => actions.current.refresh()} aria-label="Refresh camera sources">
-          Refresh
-        </Button>
-      </div>
-      <p id={noteId} role="status" className={`mt-1.5 text-xs ${problem ? 'text-alarm-ink' : 'text-ink-3'}`}>{note}</p>
-    </div>
+    <CameraBar id={id}>
+      <select id={id} className={SELECT_CLASS} aria-describedby={noteId}
+        value={status?.active_id ?? ''}
+        disabled={busy || !!pending || !!error || !status?.can_switch || !status.sources.length}
+        onChange={(event) => actions.current.select(event.target.value)}>
+        {!status && <option value="">Finding cameras…</option>}
+        {missing && <option value={status.active_id ?? ''} disabled>{status.active_name} (current)</option>}
+        {status?.sources.map((source) => <option key={source.id} value={source.id}>{source.name} · {source.index}</option>)}
+      </select>
+      <Button variant="quiet" size="sm" icon={<IconRefresh />} disabled={busy || !!pending}
+        onClick={() => actions.current.refresh()} aria-label="Refresh camera sources" title="Refresh camera sources" />
+      <p id={noteId} role="status" title={note}
+        className={`min-w-0 flex-1 basis-40 truncate text-xs ${problem ? 'text-alarm-ink' : 'text-ink-3'}`}>{note}</p>
+    </CameraBar>
   )
 }
 
 export function CameraSourceSelector({ url, live }: { url: string; live: boolean }) {
-  if (!live || !url) return (
-    <p className="mb-2 text-xs text-ink-3">Camera source: connect to Live bridge in Signals to choose a camera.</p>
-  )
+  if (!live || !url) return <OfflineCameraSelector />
   return <LiveCameraSelector key={url} url={url} />
 }

@@ -10,7 +10,7 @@ import { Kbd } from '../../ui/Kbd'
 import { Plate } from '../../ui/Plate'
 import { Readout } from '../../ui/Readout'
 import { Switch } from '../../ui/Switch'
-import { DIAGRAM_HEIGHT, drawTouchDiagram } from './touchDiagram'
+import { PadTiles } from './PadTiles'
 import { drawGripTrace, drawHapticTrace, type TraceHover } from './traces'
 
 function readGrip(): string {
@@ -43,10 +43,6 @@ export function TouchLink() {
     hover.current.x = null
   }
 
-  const diagram = useCanvas(
-    useCallback<Draw>((ctx, w, h, nowMs) => drawTouchDiagram(ctx, w, h, nowMs, haptics), [haptics]),
-    30,
-  )
   const grip = useCanvas(useCallback<Draw>((ctx, w, h, nowMs) => drawGripTrace(ctx, w, h, nowMs, hover.current.x), []))
   const motor = useCanvas(useCallback<Draw>((ctx, w, h, nowMs) => drawHapticTrace(ctx, w, h, nowMs, hover.current.x), []))
 
@@ -79,35 +75,13 @@ export function TouchLink() {
         />
       }
     >
-      <div className="flex justify-between gap-3 text-xs text-ink-2">
-        <span>Gripper pads</span>
-        <span>Armband motors, as commanded</span>
-      </div>
-      <canvas
-        ref={diagram}
-        className="mt-1 block w-full"
-        style={{ height: DIAGRAM_HEIGHT }}
-        role="img"
-        aria-label="Diagram of the four gripper pads and the four armband motors, shaded by their current level, joined by a wire that is drawn open when haptics are off."
-      />
-      <p className="mt-1 text-sm text-ink-2">
+      <PadTiles />
+      <p className="mt-2 text-sm text-ink-2">
         {idle
           ? 'No data source is connected, so the pads and motors read nothing.'
           : haptics
             ? 'Pad pressure is driving the armband motors.'
             : 'Control condition: the pads still report grip, but nothing is sent to the armband.'}
-      </p>
-      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-2">
-        <span className="num">0</span>
-        <span
-          aria-hidden="true"
-          className="h-2 w-20 rounded-xs border border-rule-strong"
-          style={{
-            background: 'linear-gradient(90deg, var(--well) 0 6%, var(--touch-300) 6%, var(--touch-500) 53%, var(--touch-700))',
-          }}
-        />
-        <span className="num">1</span>
-        <span className="ml-1">shading for pads and motors</span>
       </p>
 
       <div className="mt-4 border-t border-rule pt-3" onPointerMove={onMove} onPointerLeave={onLeave}>

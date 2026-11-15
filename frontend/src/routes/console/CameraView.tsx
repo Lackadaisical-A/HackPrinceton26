@@ -135,7 +135,6 @@ export function CameraView() {
 
   return (
     <>
-    <CameraSourceSelector url={cameraUrl} live={live} />
     <section
       aria-label="Wrist camera"
       className="relative w-full overflow-hidden rounded-lg bg-window text-window-ink max-sm:!aspect-[4/3]"
@@ -235,6 +234,7 @@ export function CameraView() {
         </div>
       </div>
     </section>
+    <CameraSourceSelector url={cameraUrl} live={live} />
     </>
   )
 }
