@@ -27,7 +27,9 @@ CLEAR_TARGET = "clear_target"
 SET_PHASE = "set_phase"
 SET_AIM = "set_aim"         # {"x": 0.52, "y": 0.61}: the gripper's grasp point in the picture, fractions 0..1
 TAG_VISUAL = "tag_visual"   # {"name": "my flask", "bbox": [x1, y1, x2, y2] (0..1) or null = the locked target}
-TAG_TEXT = "tag_text"       # {"name": "my mug", "prompt": "red mug"}; prompt defaults to the name
+TAG_TEXT = "tag_text"       # {"name": "my mug", "prompt": "red mug"}; prompt defaults to the name. Or with
+#                             "prompts": ["red mug", "mug seen from above"]: several descriptions in one change
+MAX_PROMPTS = 8             # most descriptions one tag_text may carry; the label manager keeps what fits
 UNTAG = "untag"             # {"name": "my flask"}
 LABEL_COMMANDS = (TAG_VISUAL, TAG_TEXT, UNTAG)
 
@@ -39,6 +41,7 @@ class LabelRequest:
     name: str                                              # normalized: lower case, single spaces
     bbox: tuple[float, float, float, float] | None = None  # tag_visual: normalized box; None = the locked target
     prompt: str | None = None                              # tag_text: what to look for (the name if not given)
+    prompts: tuple[str, ...] | None = None                 # tag_text with `prompts`: several descriptions at once
     problem: str | None = None                             # set when the payload itself is unusable: a sentence
 
 
@@ -47,7 +50,7 @@ class CommandHooks:
     """What commands may change in the running pipeline, one hook per kind of change."""
     # The labels select_target accepts: detector.classes, or a function giving them plus the live tag names.
     classes: Sequence[str] | Callable[[], Sequence[str]]
-    set_preferred_label: Callable[[str | None], None]     # Pipeline.set_preferred_label
+    set_preferred_label: Callable[[str | None], None]     # Pipeline.pick_target: narrows, and releases the lock
     set_phase: Callable[[str], None] | None = None        # Pipeline.set_phase; None where phases are not run
     teach: Callable[[LabelRequest], bool] | None = None   # LabelManager.teach; None where labels cannot change
     set_aim: Callable[[float, float], None] | None = None  # Pipeline.set_aim; None where guidance is not run
@@ -131,6 +134,13 @@ def parse_label_request(payload: dict) -> LabelRequest:
         if not (isinstance(raw, (list, tuple)) and len(raw) == 4 and all(is_number(c) for c in raw)):
             return LabelRequest(kind, name, problem=f"Cannot learn {name or 'that'}: the box is not valid.")
         return LabelRequest(kind, name, bbox=tuple(float(c) for c in raw))
+    if kind == TAG_TEXT and payload.get("prompts") is not None:
+        raw = payload["prompts"]
+        prompts = ([" ".join(p.split()) for p in raw]
+                   if isinstance(raw, (list, tuple)) and all(isinstance(p, str) for p in raw) else [])
+        if not prompts or len(prompts) > MAX_PROMPTS or not all(prompts):
+            return LabelRequest(kind, name, problem=f"Cannot learn {name or 'that'}: the descriptions are not valid.")
+        return LabelRequest(kind, name, prompts=tuple(prompts))
     if kind == TAG_TEXT:
         raw = payload.get("prompt")
         if raw is None:

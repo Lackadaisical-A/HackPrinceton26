@@ -11,6 +11,7 @@ import { Plate } from '../../ui/Plate'
 import { Readout } from '../../ui/Readout'
 import { Switch } from '../../ui/Switch'
 import { PadTiles } from './PadTiles'
+import { HapticTiles } from './HapticTiles'
 import { drawGripTrace, drawHapticTrace, type TraceHover } from './traces'
 
 function readGrip(): string {
@@ -76,12 +77,13 @@ export function TouchLink() {
       }
     >
       <PadTiles />
+      <HapticTiles />
       <p className="mt-2 text-sm text-ink-2">
         {idle
           ? 'No data source is connected, so the pads and motors read nothing.'
           : haptics
-            ? 'Pad pressure is driving the armband motors.'
-            : 'Control condition: the pads still report grip, but nothing is sent to the armband.'}
+            ? 'Haptics requested. Motor telemetry confirms output; a dash means no fresh reading.'
+            : 'Haptics requested off. Motor telemetry confirms whether output has stopped.'}
       </p>
 
       <div className="mt-4 border-t border-rule pt-3" onPointerMove={onMove} onPointerLeave={onLeave}>

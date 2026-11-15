@@ -174,16 +174,17 @@ Vision reads the `command` topic from every endpoint in `transport.command_sub`.
 |---|---|
 | `tcp://127.0.0.1:5557` | the console bridge (`../bridge`) |
 | `tcp://127.0.0.1:5559` | the voice process, `python -m paul_vision.voice` (`voice.endpoint`; see "Voice commands") |
+| `tcp://127.0.0.1:5564` | `../assist`, which sends Gemini's extra descriptions of a taught object (`tag_text` with `prompts`; see "More views from Gemini") |
 | `tcp://127.0.0.1:5560` | `python -m paul_vision.send_command` (the last entry is its default) |
 
 | Command | Payload | Effect |
 |---|---|---|
-| `select_target` | `{"t": 1731542400.2, "type": "select_target", "label": "pill bottle"}` | Only objects with this label can be the target. The label must be one of `detector.classes` or a name that has been taught and is live now (see "Teaching vision a name"); anything else is logged and ignored. |
-| `clear_target` | `{"t": 1731542400.2, "type": "clear_target"}` | Any object can be the target again. |
+| `select_target` | `{"t": 1731542400.2, "type": "select_target", "label": "pill bottle"}` | Only objects with this label can be the target. The label must be one of `detector.classes` or a name that has been taught and is live now (see "Teaching vision a name"); anything else is logged and ignored. The locked target is let go, also when the label is the one already selected, and the best candidate at the aim point is picked afresh (see "One target at a time"). |
+| `clear_target` | `{"t": 1731542400.2, "type": "clear_target"}` | Any object can be the target again. The locked target is let go and picked afresh, as for `select_target`. |
 | `set_phase` | `{"t": 1731542400.2, "type": "set_phase", "phase": "carry"}` | Forces the phase from the next frame (see "Phases"). The phase must be one of the six; anything else is logged and ignored. |
 | `set_aim` | `{"t": 1731542400.2, "type": "set_aim", "x": 0.52, "y": 0.61}` | Measures guidance from this point of the picture (fractions of its width and height) instead of `guidance.aim`: `dx`, `dy`, `aligned`, the spoken direction, and which object is nearest for target picking. Use it when the gripper's grasp point does not show at the frame centre. The target is kept; its smoothing starts again from the new point. `x` and `y` must be numbers from 0 to 1; anything else is logged and ignored. Kept until vision stops (a camera switch keeps it). |
 | `tag_visual` | `{"t": 1731542400.2, "type": "tag_visual", "name": "my flask", "bbox": [0.31, 0.22, 0.45, 0.61]}` | Learns what is in the box as `name`. `bbox` is `[x1, y1, x2, y2]`, each 0 to 1 of the picture; `null` means the locked target's box. |
-| `tag_text` | `{"t": 1731542400.2, "type": "tag_text", "name": "my mug", "prompt": "white mug"}` | Learns to look for the description `prompt` as `name`. Without `prompt`, the name itself is the description. |
+| `tag_text` | `{"t": 1731542400.2, "type": "tag_text", "name": "my mug", "prompt": "white mug"}` | Learns to look for the description `prompt` as `name`. Without `prompt`, the name itself is the description. With `"prompts": ["steel flask with black cap", "round black cap seen from above"]` (1 to 8 descriptions; `prompt` is then ignored) all of them are added to `name` in one change: those that are too long or already stored are left out, and the rest are cut to the views the name has free. |
 | `untag` | `{"t": 1731542400.2, "type": "untag", "name": "my flask"}` | Forgets everything taught as `name`. |
 
 The three label commands are not judged on arrival like the others: vision accepts or refuses each one and says which in `summary`, as described under "Teaching vision a name". A name is stored in lower case with single spaces.
@@ -205,6 +206,26 @@ uv run python -m paul_vision.send_command untag my flask
 ```
 
 It binds the last entry of `transport.command_sub`, waits up to `--wait` seconds (default 3) until vision has subscribed, sends the command once, prints for example `sent {"t":1794694736.056261,"type":"set_phase","phase":"carry"} to 1 subscriber on tcp://127.0.0.1:5560` and exits. Before sending it checks a phase, and a `select_target` label against `detector.classes` and the names in the label library, as vision will (if the library cannot be read it says so and checks `detector.classes` only). `--bbox` must be four numbers 0 to 1 with x1 < x2 and y1 < y2, and is only for `tag_visual`; `--prompt` is only for `tag_text`. Whether a tag command can be done is left to vision, which answers by voice. Exit status: 0 sent; 1 not sent (the port is taken, or nobody subscribed in time); 2 bad arguments, an unknown phase or label, or a configuration that cannot be loaded (one line on stderr starting `send_command: configuration:`). `--endpoint` binds another endpoint; it must be listed in `transport.command_sub` or vision never hears it (send_command warns). `uv run python -m paul_vision.subscribe_print --topic command` shows every command from every sender.
+
+### One target at a time
+
+Vision locks one object and stays on it. While that object is seen (at `selection.conf_keep` or better), no other object takes the target, however confident or close to the crosshair it is, and a change of the object's voted label does not drop it either. The lock moves only when:
+
+- the operator asks: `select_target` or `clear_target` lets the target go and picks the best candidate at the aim point afresh, so choosing again in the console (the same name too) is how to move to another object;
+- the target is lost. Its last box is held for `selection.coast_s`. After that nothing is published as the target (`low_confidence` or `no_target`) until `selection.reacquire_s` after the last sighting, while vision waits for the same object: a confident candidate within `selection.reacquire_dist` of where the target was last seen continues the lock, also under a new track id, and other objects are ignored. Only when that time is up is the best-scoring object locked as a new target;
+- the phase changes what may be a target (objects, or the drop station), the camera is switched, or the feed stalls for longer than `watchdog.stall_timeout_s`.
+
+Where the target was last seen is a place in the picture, so a fast camera move during the wait can make the same object look like another one; it is then picked up as a new target once the wait is over.
+
+### The `labels` topic
+
+Beside `vision`, on the same port, vision publishes what `select_target` accepts, for the console's target picker and for `../assist`:
+
+```
+labels {"t":1731542400.1,"classes":["cup","bottle","pill bottle","box"],"tags":[{"name":"my flask","views":4}],"busy":null}
+```
+
+`classes` is `detector.classes`; `tags` are the taught names in the order they were first taught, each with its number of views; `busy` is the name being learned or forgotten right now, or `null`. It is sent when it changes and every `labels.publish_s` (2 s). `paul_vision.messages` owns it (`build_labels_message`, `validate_labels`). The stall watchdog does not count it: only `vision` messages show a live feed.
 
 ## Teaching vision a name
 
@@ -270,6 +291,12 @@ On 14 November 2026, on the development laptop, on loops cut from `recordings/ru
 - Live through the launcher (`../demo.ps1 -ServicesOnly`, see "The team launcher") that evening, on OpenVINO on the Intel GPU and the laptop's built-in camera at about 15 FPS (median 14.8; `detect` median 51 ms): `tag_text` "flask" (the description "metal water flask") was live 47.5 s after the command, and after a restart the banner listed it (`labels: 1 tag(s) ['flask'] in ...\computer_vision\labels`). Then "mug" from a typed voice line, live after 48.7 s, and forgotten after 39.6 s; "thermos" from a WebSocket client sending what the console sends, 40.9 s, forgotten after 29.7 s; and a box drawn on the console's camera view, learned as "face", 33.5 s. A box under `labels.min_box_side` and the name "pick station" were refused with their sentences. Of each worker's run, starting the process took 7.9 to 10.9 s, loading the model 2.6 to 4.8 s, a text embedding 11.1 to 14.0 s (a picture 1.7 s) and the OpenVINO export 12.4 to 17.0 s. Why these changes took about twice as long as on the clips was not established; the camera, the bridge and the console ran beside them.
 
 How well a text tag finds its object, a stale library rebuilt at startup, the two timeouts, teaching from a coasting target's last sighting, saving a change again after `library.json` could not be replaced, and ending a change after an unexpected error have run only in the unit tests (see `NOT_BUILT.md`).
+
+### More views from Gemini
+
+One snapshot shows the object from one side in one light. `../assist` therefore asks Gemini for more: for every taught name it has not dealt with, it sends Gemini the snapshot with the object's box and asks how the same object looks from other sides, from above, lying down, and in dim or harsh light. The answers (3 by default) come back to vision as one `tag_text` command with `prompts`, on `tcp://127.0.0.1:5564`, and vision adds them to the name in a single change: "Learning more about my flask." and then "My flask is ready." again. A name taught by description gets them from its name and description, without a picture. Names taught in earlier sessions are done after the next start. Assist waits until vision is idle (`busy` in the `labels` topic), keeps what it has done in `<labels dir>/enriched.json`, and tries a name twice before leaving it as it is. Without `GEMINI_API_KEY`, or with `--no-enrich`, teaching works as before with the one view. The snapshot is sent to Google's Gemini API.
+
+On 15 November 2026 the vision side ran in tests only (the batch through the real `label_worker.run_job` with a stand-in model), and Gemini was asked once for the stored snapshot of "vaseline": it answered in 7.1 s with "dark blue oval plastic lid seen from above", "plain back of translucent white jar with blue lid" and "white plastic petroleum jelly jar lying on its side". The whole loop (assist sending, vision adding the views, detection with them) has not run live, and whether the extra descriptions make the detector find the object from other sides has not been measured.
 
 ### The library on disk
 
@@ -623,6 +650,7 @@ Every threshold lives in `config.yaml`, with a comment on each key. Unknown or m
 - `detector.classes` (then re-bake)
 - `selection.conf_lock` / `conf_keep`: confidence to acquire and to keep a target
 - `selection.coast_s`: how long guidance is held when the target misses frames
+- `selection.reacquire_s` / `reacquire_dist`: how long, and how close to where it was, vision waits for a lost target before locking another object
 - `tracker.label_memory_s` / `label_margin`: how readily a tracked object changes its name
 - `guidance.deadzone_enter` / `deadzone_exit`: when `aligned` turns on and off
 - `distance.thresholds`: box area fractions for `near` and `in_reach`, per label (the station entries decide when `place` begins). Startup checks that each entry has `0 < near < in_reach` and `in_reach * (1 + distance.hysteresis) < 1` (with the hysteresis at 0.15, `in_reach` below about 0.87): a target already seen must pass `in_reach` by the hysteresis margin, and a box never fills more than the whole frame.

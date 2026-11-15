@@ -59,23 +59,45 @@ countdown and two-second stable capture restores the reference. The enabled robo
 preview resumes automatically; an intentional manual Pause remains paused.
 There is no need to repeat pose B unless a strap or sensor mounting moved.
 
-Successful calibration saves only the mounting axes and arm settings to ignored
-`calibration.local.json`. On a future app launch, use Recenter arm once. Old world
+Successful calibration saves mounting axes, arm settings and learned motion ranges to ignored
+`wearable_test/calibration.local.json` (relative to the repo root). Every successful
+range capture saves automatically, including shoulder pan. The web calibration
+panel shows the saved/loaded state and full file path. This file is self-contained:
+its dimensions and sensor-axis settings are used if `settings.local.json` is absent.
+On a future app launch, use Recenter arm once. Old world
 orientations are deliberately not restored across board restarts. Saved mounting
 is rejected if arm settings differ or its axes are invalid. Demo mode neither
 loads nor overwrites the saved hardware mounting.
 
 ## SO-101 URDF add-on (after calibration)
 
+To use the full robot elbow/shoulder travel, capture **C · Bent elbow** at your
+comfortable maximum bend, then **D · Arm raised** at your highest straight-arm
+reach. These controls are also **Learn elbow bend** and **Learn shoulder reach**
+in the web console. Each capture pauses physical control. Straight-to-bent
+elbow motion maps to the complete robot elbow range. Shoulder down/forward/up
+maps piecewise to the shoulder endpoints while retaining the forward reference.
+Learned ranges persist across recenter and restart; a new A/B clears them.
+This prioritizes joint travel over reproducing the exact human wrist position.
+
+For easier shoulder rotation, capture **E / Pan left** and **F / Pan right**
+(**Learn pan left/right** in the web console). Keep your torso facing forward,
+reach with your wrist out from the shoulder, and capture each comfortable side.
+Both sides are required; each accepts 15–150 degrees from pose A. Pose A remains
+centered, and the captured left/right angles independently map to the robot's
+full pan limits. Amplifying pan does not change the elbow/shoulder flex calculation.
+Avoid capturing with the wrist directly above/below the shoulder, where heading
+is undefined. Recenter keeps these ranges; a new A/B clears them.
+
 After completing A/B, click **Enable SO-101 URDF preview**. A second view inside
 the same application renders the actual local SO-101 URDF and meshes. It uses
 the live sensor readings already owned by Wearable Lab, with no second serial
 connection or Firebase dependency. Closing Wearable Lab also closes the preview.
 
-- The straight-forward calibration pose maps to a straight-forward robot arm, using offsets derived from the actual URDF. Its zero joint angles describe a folded pose, so zero angles cannot serve as calibration neutral.
+- Before learning motion ranges, the straight-forward calibration pose maps to a straight-forward robot arm, using offsets derived from the actual URDF. Learned elbow range maps straight to the robot's full extension limit instead.
 - Shoulder pan follows shoulder-to-wrist reach direction, using both the bicep and forearm. Moving the forearm left/right turns the base even when the bicep hangs down. The mounting foot remains fixed; the shoulder pan joint rotates above it.
 - Bicep and forearm directions are scaled to the robot's link lengths. A two-link inverse-kinematics solution drives shoulder lift and elbow to track that wrist reach. It keeps the elbow bend on the branch with the wider URDF range, preventing sudden branch flips.
-- Hand direction drives wrist flex; palm orientation drives wrist roll. The robot has fewer degrees of freedom and different limits than a human arm, so its elbow shape and some wrist poses will differ. Unreachable targets are bounded and reported as **At URDF limit**, rather than silently looking stuck.
+- Hand direction drives wrist flex; palm orientation drives wrist roll at **2× gain** in both preview and physical control. The robot has fewer degrees of freedom and different limits than a human arm, so its elbow shape and some wrist poses will differ. Unreachable targets are bounded and reported as **At URDF limit**.
 - Joystick **Y=0 -> URDF gripper maximum/open**, **Y=4095 -> minimum/closed**,
   and neutral **Y=1810 -> halfway open**. This is position control. Returning the
   stick to neutral returns the claw toward halfway. The simulated gripper uses
@@ -83,8 +105,8 @@ connection or Firebase dependency. Closing Wearable Lab also closes the preview.
 
 Mounting calibration is applied before robot mapping. The preview uses a 35 ms
 smoothing time constant (about 95% of a step in 105 ms, plus sensor/render delay),
-with no slow simulated joint-speed cap. The physical robot controller's speed
-limits are unchanged. The two views start from matching viewing directions.
+with no simulated joint-speed cap. The physical controller defaults to 240°/s,
+5 ms smoothing and a 100 Hz loop. The two views start from matching viewing directions.
 Leave **Reverse direction** unchecked initially; use a checkbox only for a
 deliberate per-joint reversal about the robot's calibration pose.
 Drag to orbit, scroll to zoom, and use **Pause/Resume** to hold/restart the preview.

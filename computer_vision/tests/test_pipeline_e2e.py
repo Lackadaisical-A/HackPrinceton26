@@ -852,3 +852,55 @@ def run_and_collect_with(cfg, source, detector, **kwargs) -> list[dict]:
     received = [m for m in received if m["t"] <= finished]
     first = next(i for i, m in enumerate(received) if m["frame_id"] >= 1 and m["status"] != "degraded")
     return received[first:]
+
+
+# --- one object at a time: the lock, and the `labels` topic ---
+
+def test_a_better_object_does_not_take_the_target_until_it_is_picked_again(cfg):
+    far, near = det("cup", 0.6, cx=0.8, cy=0.5), det("bottle", 0.95, cx=0.5, cy=0.5)
+    pipeline = Pipeline(cfg, FakeDetector([far], [far, near]))
+    first = pipeline.process(frame(1, 100.0)).message["target"]["track_id"]
+    for i in range(2, 92):  # three seconds beside a more confident object on the crosshair
+        msg = pipeline.process(frame(i, 100.0 + i / 30)).message
+        assert msg["target"]["track_id"] == first and msg["target"]["label"] == "cup"
+    pipeline.pick_target(None)  # clear_target: the operator asks again
+    msg = pipeline.process(frame(92, 100.0 + 92 / 30)).message
+    validate_vision(msg)
+    assert msg["target"]["label"] == "bottle"
+    pipeline.pick_target("cup")  # select_target
+    assert pipeline.process(frame(93, 100.0 + 93 / 30)).message["target"]["label"] == "cup"
+
+
+def test_the_target_is_not_replaced_while_it_is_hidden_for_a_moment(shipped_cfg):
+    # The shipped watchdog: frames 0.1 s apart are not a stall (a stall starts tracking over, lock included).
+    cfg = shipped_cfg
+    assert cfg.selection.coast_s < 0.2 < cfg.selection.reacquire_s and cfg.watchdog.stall_timeout_s > 0.1
+    cup, other = det("cup", 0.9, cx=0.3, cy=0.5), det("bottle", 0.95, cx=0.8, cy=0.5)
+    pipeline = Pipeline(cfg, FakeDetector([cup, other], [other], [other], [other], [cup, other]))
+    t = 100.0
+    assert pipeline.process(frame(1, t)).message["target"]["label"] == "cup"
+    assert pipeline.process(frame(2, t + 0.1)).coasting
+    hidden = pipeline.process(frame(3, t + 0.2)).message
+    assert (hidden["status"], hidden["target"], hidden["guidance"]) == ("low_confidence", None, None)
+    assert pipeline.process(frame(4, t + 0.3)).message["target"] is None  # the bottle is not the target
+    back = pipeline.process(frame(5, t + 0.4)).message
+    assert back["status"] == "ok" and back["target"]["label"] == "cup"
+
+
+def test_run_publishes_the_labels_topic(cfg):
+    from paul_vision.messages import validate_labels
+
+    cfg = dataclasses.replace(cfg, labels=dataclasses.replace(cfg.labels, publish_s=0.05))
+    with VisionPublisher(ANY_PORT, send_hwm=200, watchdog=cfg.watchdog) as pub, \
+            Subscriber(pub.endpoint, topic="labels") as sub:
+        deadline = time.monotonic() + 5
+        received = []
+        while not received:  # run again until the subscription is live
+            assert time.monotonic() < deadline, "no labels message arrived"
+            run(cfg, FakeSource([0.03] * 5), FakeDetector(CUP_LEFT), pub)
+            while (item := sub.recv(0.05)) is not None:
+                received.append(item)
+    assert {topic for topic, _ in received} == {"labels"}
+    for _, msg in received:
+        validate_labels(msg)
+        assert (msg["classes"], msg["tags"], msg["busy"]) == (list(cfg.detector.classes), [], None)

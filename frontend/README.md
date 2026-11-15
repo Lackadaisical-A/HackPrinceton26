@@ -5,6 +5,41 @@ Launch URLs can select live data automatically, for example
 Potentiometer telemetry displays a separate control-input panel; target previews
 without measured robot feedback are labeled explicitly.
 
+**Setup** (key 4) brings every Wearable Lab desktop window into the browser,
+in calibration order: sensor and coin checks, arm dimensions and sensor axes,
+A/B/C/D/pan capture with the 3-IMU arm view, the preview ghost and joint
+directions, response presets and Advanced tuning, and **Robot control** (Align &
+follow, Enable claw, STOP / hold, joint table). Robot control also sits on the
+Console. **Esc** sends STOP / hold from any screen, even while typing, and the
+top bar shows a **STOP / hold** button whenever a wearable controller answers.
+An enable is a request that Wearable Lab's serial worker checks and confirms.
+
+**Arm-to-robot calibration** uses Wearable Lab's existing A/B mounting capture
+and pose-A recenter. Run `.\demo.ps1 -Controller imu` from the repository root;
+restart an already-running controller and bridge after updating. Capture A with
+your straight arm forward at shoulder height, palm down, then B with your
+straight arm lowered. Each capture waits 3 seconds and samples for 2 seconds.
+The panel shows all three sensors, confirmed progress and failures. Recenter
+reuses saved mounting after a restart. Capture and Cancel/hold pause arm/claw
+and haptics; calibration itself never enables motion. Check the preview ghost,
+then use **Align & follow** in **Robot control**. Capture is disabled in the simulator.
+
+After A/B or recenter, use **Learn elbow bend** at your comfortable maximum
+bend, then **Learn shoulder reach** at your highest straight-arm reach. The
+learned endpoints map to the full elbow/shoulder travel and are saved alongside
+mounting. Recenter keeps them; Redo A/B clears them. Wrist roll is 2× in both
+the IMU preview and physical mapping, with a separate 45° physical wrist trim.
+
+The `calibration` topic uses port 5562. `calibrate_arm` uses the existing command
+channel with request IDs, controller session/revision checks and a 2-second
+expiry. Missing/stale status disables capture; requests are never automatically
+retried. The Python launcher's `--calibration-pub-port` configures both ends.
+
+Verify without hardware: `uv run wearable_test/test_console.py` from the repo
+root tests the real capture/model and ZMQ transport. With the frontend running,
+`uv run frontend/scripts/check_calibration.py` checks the browser flow, errors,
+stale data, keyboard controls and mobile layout against a fake controller.
+
 With live data, **Camera source** above the video lists connected cameras by name.
 Choose one to switch both the displayed feed and computer vision input; **Refresh**
 rescans attached devices. The active selection changes only after a frame arrives,
@@ -121,7 +156,7 @@ onto https://app.netlify.com/drop. Repeat to update it.
   when haptics are off), and 12-second traces of grip and haptic output. The haptics switch lives
   here and is locked while a trial runs.
 - Trial bar: start and finish a trial, mark drops and deformations.
-- Arm, Armband, Task and Event log panels.
+- Arm, Armband, Target and Event log panels.
 
 **Trials** (`#/trials`) compares finished trials with haptics against trials without: duration,
 drops, deformations and peak grip, as charts and as a table. Aborted trials are listed but not
@@ -288,6 +323,24 @@ These were chosen so the screens could be built. Most live in `src/config.ts`.
 
 ## What has been verified
 
+The IMU console includes **Robot speed & load**. Arm speed (10–360°/s), claw
+speed (0.1–3 travel/s), and arm/gripper software load thresholds (1–1023 raw
+counts) apply atomically through the existing controller worker. **Software load
+stops default off**; the switch enables both thresholds. Servo firmware settings
+are unaffected. Applied values come from controller acknowledgments; edits are
+session-only, never enable motion, and cannot be applied with stale robot status.
+If the serial worker stops, **Reconnect robot** appears with the controller's
+connection error. It reconnects read-only; motion still needs explicit enable,
+and the slider requires a new endpoint reference.
+
+The same panel provides **Joystick X → slider**. Release the slider, place it at
+a physical rail endpoint, mark 0% or 100%, center X, and enable X control. Positive
+X travels toward 100%, negative X toward 0%; center holds. Y retains claw control.
+The slider uses the saved Phase-28 multi-turn calibration and the arm worker's
+existing serial connection. Reference again after a controller restart or slider
+power loss. Stop/hold, the joystick switch, and stale wearable input also stop
+slider control. There is no automatic resume.
+
 - `npm run typecheck`, `npm run lint`, `npm test` (246 tests in 12 files) and `npm run build` all
   pass.
 - Every screen was checked in headless Chrome at 1440 px and 390 px wide against the simulator,
@@ -297,7 +350,9 @@ These were chosen so the screens could be built. Most live in `src/config.ts`.
   laptop's built-in camera and the bridge running:
   - The console showed the camera picture with the overlay, the vision rate and the frame age.
   - Choosing a target in the Task panel sent `select_target` and `clear_target`, and vision acted
-    on both.
+    on both. (The Task panel has since become the Target panel: the phase track is gone, and the
+    picker lists every name vision reports in its `labels` topic, taught names included. That
+    panel has run against the simulator's tests only.)
   - With vision stopped, the picture was hidden and the window said "No vision data". After vision
     started again the picture and the data came back without reloading the page.
   - With the console opened before vision, the window said the stream did not load, kept trying,

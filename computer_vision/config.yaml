@@ -74,6 +74,9 @@ labels:
   # on the Intel GPU. Past this the change is reported as failed (the thread cannot be stopped; vision stays busy
   # for label changes until it ends).
   load_timeout_s: 90
+  # The `labels` topic (what select_target accepts: detector.classes and the taught names, for the console's target
+  # picker) is sent on vision_pub when it changes, and again this often for a console that connected late.
+  publish_s: 2.0
 
 # Printed ArUco markers on the pick and drop-off stations (paul_vision/aruco.py). Print them with
 # `uv run python scripts/make_markers.py`; reprint after changing the dictionary or an id.
@@ -115,9 +118,15 @@ selection:
   conf_lock: 0.40           # confidence needed to acquire a target
   conf_keep: 0.25           # confidence needed to keep the current target
   center_weight: 1.0        # score = confidence x (1 - center_weight x distance from guidance.aim); 0 = confidence only
-  switch_margin: 0.25       # a rival must score this fraction higher than the current target...
-  switch_dwell_s: 0.5       # ...continuously for this long before the target switches
+  # A locked target is never given up for another object while it is seen; only select_target, clear_target or
+  # losing it moves the lock.
   coast_s: 0.15             # hold the last guidance this long when the target misses a frame (0 = off)
+  # After coast_s, wait until this long after the last sighting for the same object before locking any other:
+  # nothing is published as the target meanwhile (0 = lock the best object at once).
+  reacquire_s: 1.5
+  # "The same object": a confident candidate whose centre is within this distance (fraction of the frame) of where
+  # the target was last seen. It continues the lock, even under a new track id.
+  reacquire_dist: 0.2
   preferred_label: null     # restrict the target to one label (the M2 voice override sets this)
 
 guidance:
@@ -186,6 +195,7 @@ transport:
   command_sub:
     - tcp://127.0.0.1:5557             # the console bridge (../bridge)
     - tcp://127.0.0.1:5559             # the voice process (python -m paul_vision.voice, voice.endpoint) publishes here
+    - tcp://127.0.0.1:5564             # ../assist: Gemini's extra descriptions of a taught object (tag_text prompts)
     - tcp://127.0.0.1:5560             # the last one: python -m paul_vision.send_command binds it by default
   robot_sub: tcp://127.0.0.1:5558      # the arm controller binds here (`robot`, 10 Hz); read with gripper_load
   send_hwm: 20              # per-subscriber send queue; a stuck subscriber never holds more than this

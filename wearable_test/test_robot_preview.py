@@ -65,6 +65,21 @@ class PreviewTests(unittest.TestCase):
         preview.labels = {joint:MagicMock() for joint in preview.mapping.current}
         return preview
 
+    def test_directions_are_shared_with_wearable_lab_and_follow_web_changes(self):
+        preview = self.make_preview()
+        shared = dict.fromkeys(preview.mapping.current, False)
+        preview.mapping.reverse = shared
+        variable = MagicMock()
+        variable.get.return_value = False
+        preview.reverse_vars = {'wrist_roll': variable}
+        changes = []
+        preview.on_reverse = lambda joint, value: changes.append((joint, value))
+        preview.set_reverse('wrist_roll', True)
+        self.assertEqual(changes, [('wrist_roll', True)])
+        shared['wrist_roll'] = True  # As Wearable Lab does after a web-console request.
+        preview.update(ArmModel().geometry(), None, False, False, 1., 'Recenter arm')
+        variable.set.assert_called_once_with(True)
+
     def test_reference_hold_resumes_after_recenter_without_latching_pause(self):
         preview = self.make_preview()
         geometry = ArmModel().geometry()

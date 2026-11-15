@@ -9,6 +9,7 @@ import {
   TOPIC_INFO,
   TOPICS,
   VALIDATORS,
+  validateAssist,
   validateHaptics,
   validateImu,
   validatePressure,
@@ -291,5 +292,39 @@ describe('encodeFrame', () => {
   it('round-trips through parseFrame', () => {
     const payload = { t: 1731542400.2, type: 'select_target', label: 'pill bottle', nested: { list: [1, 2.5, null] } }
     expect(parseFrame(encodeFrame(COMMAND_TOPIC, payload))).toEqual({ ok: true, topic: COMMAND_TOPIC, payload })
+  })
+})
+
+describe('validateAssist', () => {
+  const ok = {
+    t: 1731542400.5,
+    seq: 2,
+    status: 'ok',
+    detail: null,
+    model: 'gemini-2.5-flash',
+    result: {
+      scene: 'A person in bed.',
+      patient: { present: true, observations: ['Reaching'], urgency: 'watch' },
+      suggestions: [{ text: 'Hand the bottle', item: 'bottle' }, { text: 'Check in', item: null }],
+      items: [{ name: 'bottle', prompt: 'clear bottle', reason: 'Thirst', visible: true, known: true }],
+    },
+  }
+
+  it('accepts an answer, a working and an error message', () => {
+    expect(validateAssist(ok)).toBeNull()
+    expect(validateAssist({ ...ok, status: 'working', detail: 'Looking.', result: null })).toBeNull()
+    expect(validateAssist({ ...ok, status: 'error', detail: 'No key.', model: null, result: null })).toBeNull()
+  })
+
+  it('accepts the documented example', () => {
+    const frame = parseFrame(TOPIC_INFO.assist.example)
+    expect(frame.ok && validateAssist(frame.payload)).toBeNull()
+  })
+
+  it('rejects a result that does not match the status, and malformed items', () => {
+    expect(validateAssist({ ...ok, status: 'working' })).not.toBeNull()
+    expect(validateAssist({ ...ok, result: null })).not.toBeNull()
+    expect(validateAssist({ ...ok, result: { ...ok.result, patient: { ...ok.result.patient, urgency: 'panic' } } })).not.toBeNull()
+    expect(validateAssist({ ...ok, result: { ...ok.result, items: [{ name: '', prompt: '', reason: '', visible: true, known: true }] } })).not.toBeNull()
   })
 })

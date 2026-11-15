@@ -16,7 +16,7 @@ from .commands import CommandHooks, CommandReceiver, apply_command
 from .config import Config
 from .detector import Detector
 from .guidance import GuidanceFilter
-from .messages import build_vision_message
+from .messages import build_labels_message, build_vision_message
 from .metrics import Metrics
 from .phase import PhaseMachine, target_domain
 from .pressure import Contact, ContactDetector, PressureReceiver
@@ -73,6 +73,16 @@ class Pipeline:
         self._preferred = label
         self._carry = None
         self._selector.set_preferred_label(label)
+
+    def pick_target(self, label: str | None) -> None:
+        """The `select_target` (a label) and `clear_target` (None) commands: narrow the target, and let go of the
+        locked one. The selector never leaves a target that is in view by itself, so asking again, even for the same
+        label, is how the operator moves on: the next frame picks the best candidate at the aim point afresh."""
+        self.set_preferred_label(label)
+        self._selector.release()
+        self._guidance.reset()
+        self._last_guidance = None
+        self._target_id = None
 
     def announce(self, text: str) -> None:
         """Speak `text` with the next frame's message, once (the label manager's answers). A sentence that would come
@@ -326,7 +336,7 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
     if preferred_label is not None:
         pipeline.set_preferred_label(preferred_label)
     hooks = CommandHooks(classes=labels.known_labels if labels is not None else cfg.detector.classes,
-                         set_preferred_label=pipeline.set_preferred_label, set_phase=pipeline.set_phase,
+                         set_preferred_label=pipeline.pick_target, set_phase=pipeline.set_phase,
                          teach=labels.teach if labels is not None else None, set_aim=pipeline.set_aim)
     if labels is not None:
         labels.attach(say=pipeline.announce, changed=pipeline.labels_changed)
@@ -351,6 +361,24 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
     last_summary: str | None = None
     detector_failing = False
     detector_timings = getattr(detector, "timings", None)  # CompositeDetector: seconds per part, last image
+
+    # The `labels` topic: what can be a target, for the console's picker. A publisher without publish_labels (a
+    # test's list) gets none.
+    send_labels = getattr(publisher, "publish_labels", None)
+    labels_state: tuple | None = None
+    labels_sent = 0.0
+
+    def publish_labels() -> None:
+        nonlocal labels_state, labels_sent
+        if send_labels is None:
+            return
+        tags = tuple((t.name, len(t.views)) for t in labels.library.tags) if labels is not None else ()
+        state = (tuple(cfg.detector.classes), tags, labels.busy_name if labels is not None else None)
+        now = time.monotonic()
+        if state == labels_state and now - labels_sent < cfg.labels.publish_s:
+            return
+        labels_state, labels_sent = state, now
+        send_labels(build_labels_message(t=clock.now(), classes=state[0], tags=tags, busy=state[2]))
 
     def read_contact() -> None:
         nonlocal contact
@@ -387,6 +415,7 @@ def run(cfg: Config, source: FrameSource, detector: Detector, publisher: VisionP
             if commands is not None:
                 for payload in commands.poll():
                     apply_command(payload, hooks)
+            publish_labels()
             if paused:
                 read_contact()
                 if handle(window.idle(idle_ms)):

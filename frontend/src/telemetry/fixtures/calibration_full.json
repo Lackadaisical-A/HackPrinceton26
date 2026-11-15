@@ -1,0 +1,465 @@
+{
+  "t": 1794734767.8548114,
+  "session": "d649c2145e3b44928a3694e184c31175",
+  "revision": 0,
+  "phase": "ready",
+  "capture_pose": null,
+  "remaining_s": 0.0,
+  "input_fresh": true,
+  "sensors": [
+    true,
+    true,
+    true
+  ],
+  "can_recenter": true,
+  "detail": "Capture A.",
+  "request": {
+    "id": "capture-1",
+    "ok": true,
+    "detail": "Done."
+  },
+  "motion_ranges": {
+    "shoulder_min_deg": -89.99999999999999
+  },
+  "range_capture": true,
+  "pan_capture": true,
+  "saved_config": null,
+  "tuning": {
+    "values": {
+      "speed_deg_s": 240,
+      "claw_speed_per_s": 2,
+      "max_load": 650,
+      "gripper_max_load": 350,
+      "load_stops_enabled": false
+    },
+    "revision": 0,
+    "applied_revision": 0,
+    "connected": true,
+    "fresh": true,
+    "enabled": false,
+    "request": {
+      "id": "tune-1",
+      "ok": true,
+      "detail": "Done.",
+      "revision": 1,
+      "applied": false
+    },
+    "can_reconnect": false,
+    "detail": "COM6: connected, read only.",
+    "reconnect_request": {
+      "id": "reconnect-1",
+      "ok": true,
+      "detail": "Done."
+    },
+    "grasp": {
+      "holding": false,
+      "load": 12,
+      "detail": "Open; no contact."
+    }
+  },
+  "slider": {
+    "referenced": false,
+    "enabled": false,
+    "pos": null,
+    "target": null,
+    "detail": "Reference slider.",
+    "request": {
+      "id": "slider-1",
+      "ok": true,
+      "detail": "Done."
+    }
+  },
+  "replay": {
+    "phase": "empty",
+    "revision": 0,
+    "duration_s": 0,
+    "elapsed_s": 0,
+    "samples": 0,
+    "includes_slider": false,
+    "detail": "",
+    "request": null
+  },
+  "control_request": {
+    "id": "enable-1",
+    "ok": true,
+    "detail": "ALIGNING to captured URDF pose (90 deg/s).",
+    "applied": true
+  },
+  "physical": {
+    "port": "COM6",
+    "connected": true,
+    "fresh": true,
+    "mode": "off",
+    "claw_enabled": false,
+    "grip_hold": false,
+    "can_enable_arm": true,
+    "can_enable_claw": true,
+    "mapping_mode": "absolute",
+    "alignment_deg_s": 90.0,
+    "message": "COM6: connected, read only.",
+    "input_status": "Wearable input LIVE",
+    "alignment_progress": "",
+    "limited": [
+      "elbow_flex"
+    ],
+    "loop_hz": 99.6,
+    "read_ms": 3.2,
+    "joints": [
+      {
+        "actual_deg": 1.2,
+        "preview_deg": -3.5,
+        "position": 2048.0,
+        "sent": null,
+        "gap_deg": 4.6,
+        "flag": "",
+        "load": 12.0,
+        "torque": true
+      },
+      {
+        "actual_deg": 1.2,
+        "preview_deg": -3.5,
+        "position": 2048.0,
+        "sent": null,
+        "gap_deg": 4.6,
+        "flag": "",
+        "load": 12.0,
+        "torque": true
+      },
+      {
+        "actual_deg": 1.2,
+        "preview_deg": -3.5,
+        "position": 2048.0,
+        "sent": null,
+        "gap_deg": 4.6,
+        "flag": "RATE",
+        "load": 12.0,
+        "torque": true
+      },
+      {
+        "actual_deg": 1.2,
+        "preview_deg": -3.5,
+        "position": 2048.0,
+        "sent": null,
+        "gap_deg": 4.6,
+        "flag": "",
+        "load": 12.0,
+        "torque": true
+      },
+      {
+        "actual_deg": 1.2,
+        "preview_deg": -3.5,
+        "position": 2048.0,
+        "sent": null,
+        "gap_deg": 4.6,
+        "flag": "",
+        "load": 12.0,
+        "torque": true
+      },
+      {
+        "actual_deg": null,
+        "preview_deg": null,
+        "position": 2048.0,
+        "sent": null,
+        "gap_deg": null,
+        "flag": "",
+        "load": 12.0,
+        "torque": true
+      }
+    ]
+  },
+  "response": {
+    "values": {
+      "speed_deg_s": 240.0,
+      "response_ms": 5.0,
+      "control_hz": 100.0,
+      "joint_lead_deg": {
+        "shoulder_pan": 30.0,
+        "shoulder_lift": 40.0,
+        "elbow_flex": 40.0,
+        "wrist_flex": 30.0,
+        "wrist_roll": 30.0
+      }
+    },
+    "pending": {
+      "speed_deg_s": 240.0,
+      "response_ms": 5.0,
+      "control_hz": 100.0,
+      "joint_lead_deg": {
+        "shoulder_pan": 30.0,
+        "shoulder_lift": 40.0,
+        "elbow_flex": 40.0,
+        "wrist_flex": 30.0,
+        "wrist_roll": 30.0
+      }
+    },
+    "startup": {
+      "speed_deg_s": 240.0,
+      "response_ms": 5.0,
+      "control_hz": 100.0,
+      "joint_lead_deg": {
+        "shoulder_pan": 30.0,
+        "shoulder_lift": 40.0,
+        "elbow_flex": 40.0,
+        "wrist_flex": 30.0,
+        "wrist_roll": 30.0
+      }
+    },
+    "profile": 4,
+    "pending_profile": 4,
+    "profiles": [
+      {
+        "name": "Precise",
+        "description": "Slower, steadier movement. More smoothing, with more delay."
+      },
+      {
+        "name": "Controlled",
+        "description": "Gentle movement with less delay than Precise."
+      },
+      {
+        "name": "Balanced",
+        "description": "Moderate response with room for loaded joints to catch up."
+      },
+      {
+        "name": "Quick",
+        "description": "Fast following with a short response filter."
+      },
+      {
+        "name": "Fast",
+        "description": "Default: match the preview promptly, with minimal filtering."
+      }
+    ]
+  },
+  "arm_settings": {
+    "values": {
+      "upper_cm": 30.0,
+      "forearm_cm": 26.0,
+      "hand_cm": 18.0,
+      "bicep_from_elbow_pct": 25.0,
+      "forearm_from_wrist_pct": 33.333,
+      "hand_from_wrist_pct": 50.0,
+      "axes": {
+        "upper": "Auto",
+        "forearm": "Auto",
+        "hand": "Auto"
+      }
+    },
+    "editable": true,
+    "request": {
+      "id": "arm-1",
+      "ok": true,
+      "detail": "Done."
+    }
+  },
+  "directions": {
+    "reverse": {
+      "shoulder_pan": false,
+      "shoulder_lift": false,
+      "elbow_flex": false,
+      "wrist_flex": false,
+      "wrist_roll": false,
+      "gripper": false
+    },
+    "editable": true,
+    "request": {
+      "id": "direction-1",
+      "ok": true,
+      "detail": "Done."
+    }
+  },
+  "coins": {
+    "motors": [
+      {
+        "available": true,
+        "percent": 40.0,
+        "output": 0.0,
+        "running_s": 0.0,
+        "acks": 0,
+        "feedback": false,
+        "detail": "Driver detected at 0x5A"
+      },
+      {
+        "available": true,
+        "percent": 40.0,
+        "output": 0.0,
+        "running_s": 0.0,
+        "acks": 0,
+        "feedback": false,
+        "detail": "PWM ready \u00b7 motor presence not detectable"
+      },
+      {
+        "available": true,
+        "percent": 40.0,
+        "output": 0.0,
+        "running_s": 0.0,
+        "acks": 0,
+        "feedback": false,
+        "detail": "PWM ready \u00b7 motor presence not detectable"
+      },
+      {
+        "available": true,
+        "percent": 40.0,
+        "output": 0.0,
+        "running_s": 0.0,
+        "acks": 0,
+        "feedback": false,
+        "detail": "Driver detected at 0x5A"
+      }
+    ],
+    "editable": true,
+    "request": {
+      "id": "coin-1",
+      "ok": true,
+      "detail": "Done."
+    }
+  },
+  "wearable": {
+    "imus": [
+      {
+        "live": true,
+        "hz": 0.0,
+        "age_ms": 0.0
+      },
+      {
+        "live": true,
+        "hz": 0.0,
+        "age_ms": 0.0
+      },
+      {
+        "live": true,
+        "hz": 0.0,
+        "age_ms": 0.0
+      }
+    ],
+    "boards": [
+      {
+        "name": "wroom",
+        "port": "DEMO WROOM",
+        "connected": true,
+        "driver": "ready at 0x5A",
+        "message": "DEMO: synthetic readings; no hardware connected"
+      },
+      {
+        "name": "s3",
+        "port": "DEMO S3",
+        "connected": true,
+        "driver": "ready at 0x5A",
+        "message": "DEMO: synthetic readings; no hardware connected"
+      }
+    ],
+    "joystick": {
+      "x": 2093,
+      "y": 3447,
+      "nx": 0.139,
+      "ny": 0.666,
+      "pressed": true,
+      "fresh": true
+    },
+    "joystick_center": {
+      "x": 1360.0,
+      "y": 1810.0,
+      "deadzone": 0.15
+    }
+  },
+  "geometry": {
+    "joints": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.3,
+        -0.0,
+        0.0
+      ],
+      [
+        0.151,
+        -0.0,
+        0.213
+      ],
+      [
+        0.048,
+        -0.0,
+        0.36
+      ]
+    ],
+    "markers": [
+      [
+        0.225,
+        -0.0,
+        0.0
+      ],
+      [
+        0.201,
+        -0.0,
+        0.142
+      ],
+      [
+        0.099,
+        -0.0,
+        0.287
+      ]
+    ],
+    "boards": [
+      [
+        [
+          0.622,
+          0.783,
+          0.0
+        ],
+        [
+          -0.783,
+          0.622,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      [
+        [
+          -0.847,
+          -0.0,
+          0.531
+        ],
+        [
+          -0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -0.531,
+          -0.0,
+          -0.847
+        ]
+      ],
+      [
+        [
+          -0.574,
+          -0.0,
+          0.819
+        ],
+        [
+          -0.463,
+          0.825,
+          -0.324
+        ],
+        [
+          -0.676,
+          -0.565,
+          -0.473
+        ]
+      ]
+    ],
+    "palm_side": [
+      -0.0,
+      1.0,
+      0.0
+    ],
+    "elbow_deg": 125.0,
+    "wrist_deg": 0.0,
+    "calibrated": true
+  }
+}

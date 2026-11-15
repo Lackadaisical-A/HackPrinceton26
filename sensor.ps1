@@ -48,7 +48,8 @@ try {
             $wearableArgs = @('--wroom', $Port, '--s3', $S3Port)
             if ($Demo) { $wearableArgs += '--demo' }
             if ($Command -eq 'wearable-robot' -and -not $RobotPort) { $RobotPort = 'COM6' }
-            if ($RobotPort) { $wearableArgs += @('--robot-port', $RobotPort) }
+            # --telemetry: the browser console also shows the measured arm (robot/imu on port 5558).
+            if ($RobotPort) { $wearableArgs += @('--robot-port', $RobotPort, '--telemetry') }
             uv run wearable_test/run.py @wearableArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
@@ -87,7 +88,8 @@ try {
                                     Optional: -Port COM7 -S3Port COM8; -Demo for synthetic data.
 .\sensor.ps1 wearable-robot -RobotPort COM6
                                     Same calibrated Wearable Lab mapping -> physical SO-101.
-                                    Connects read-only. Recenter, then enable arm/claw separately.
+                                    Connects read-only. Recenter, then Align & follow URDF (slow alignment).
+                                    Calibrated absolute joint targets; enable claw separately.
                                     Esc / Stop holds robot and stops wearable motors.
 .\sensor.ps1 sim                     SO-101 URDF simulation (keep dashboard running)
 .\sensor.ps1 robot-check             Detect arm + read six motors (no robot writes)

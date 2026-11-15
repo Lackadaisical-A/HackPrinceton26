@@ -1,4 +1,4 @@
-import { LIMITS, MOTORS } from '../../config'
+import { LIMITS } from '../../config'
 import { DEG, rotate, type Quat, type Vec3 } from '../../lib/math'
 import { FONT_SANS, theme } from '../../render/theme'
 import { bus } from '../../telemetry/bus'
@@ -167,13 +167,13 @@ export function drawCuff(ctx: CanvasRenderingContext2D, w: number, h: number, no
   }
   ctx.stroke()
 
-  // The four motors, around the middle of the band. The top one is solid, to show which way is up.
+  // Orientation ticks, not motor locations. Physical outputs are shown in the touch panel.
   ctx.font = `400 10.5px ${FONT_SANS}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
-  MOTORS.forEach((motor, i) => {
-    const y = Math.cos(motor.angleDeg * DEG)
-    const z = -Math.sin(motor.angleDeg * DEG)
+  ;[-90, 0, 90, 180].forEach((angle, i) => {
+    const y = Math.cos(angle * DEG)
+    const z = -Math.sin(angle * DEG)
     local[0] = 0
     local[1] = y
     local[2] = z

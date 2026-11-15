@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DistanceHint, Phase, VisionStatus } from '../telemetry/contracts'
+import type { AssistMessage, AssistResult, DistanceHint, LabelsMessage, Phase, VisionStatus } from '../telemetry/contracts'
 import type { LinkStatus } from '../telemetry/sources/types'
 
 /**
@@ -40,7 +40,7 @@ export interface Alert {
   since: number
 }
 
-export type EventKind = 'caption' | 'phase' | 'alert' | 'trial' | 'record' | 'link' | 'command'
+export type EventKind = 'caption' | 'phase' | 'alert' | 'trial' | 'record' | 'link' | 'command' | 'assist'
 
 export interface LogEvent {
   id: number
@@ -84,7 +84,15 @@ interface SessionStore {
   haptics: boolean
   /** The label the operator asked vision to target. Null means any object. */
   targetLabel: string | null
+  /** What vision says it can target (its `labels` message), or null before any: see lib/targets. */
+  labels: Pick<LabelsMessage, 'classes' | 'tags' | 'busy'> | null
   alerts: Alert[]
+  /** The latest message from the assist process (Gemini), or null before any. */
+  assist: AssistMessage | null
+  /** The last successful analysis, kept while a newer one runs or after one fails. */
+  assistResult: AssistResult | null
+  /** The item the operator asked vision to find from an assist suggestion, while it is being taught. */
+  assistFind: { name: string; state: 'teaching' | 'selected' | 'failed'; detail: string } | null
   events: LogEvent[]
   recording: RecordingState | null
   trial: ActiveTrial | null
@@ -94,7 +102,10 @@ interface SessionStore {
   setCaption: (text: string, at: number) => void
   setHaptics: (enabled: boolean) => void
   setTargetLabel: (label: string | null) => void
+  setLabels: (labels: SessionStore['labels']) => void
   setAlerts: (alerts: Alert[]) => void
+  setAssist: (assist: AssistMessage | null) => void
+  setAssistFind: (find: SessionStore['assistFind']) => void
   setRecording: (recording: RecordingState | null) => void
   setTrial: (trial: ActiveTrial | null) => void
   log: (kind: EventKind, text: string, level?: AlertLevel) => void
@@ -110,7 +121,11 @@ export const useSession = create<SessionStore>()((set) => ({
   caption: null,
   haptics: true,
   targetLabel: null,
+  labels: null,
   alerts: [],
+  assist: null,
+  assistResult: null,
+  assistFind: null,
   events: [],
   recording: null,
   trial: null,
@@ -120,14 +135,17 @@ export const useSession = create<SessionStore>()((set) => ({
   setCaption: (text, at) => set({ caption: { text, at } }),
   setHaptics: (haptics) => set({ haptics }),
   setTargetLabel: (targetLabel) => set({ targetLabel }),
+  setLabels: (labels) => set({ labels }),
   setAlerts: (alerts) => set({ alerts }),
+  setAssist: (assist) => set((s) => ({ assist, assistResult: assist?.result ?? s.assistResult })),
+  setAssistFind: (assistFind) => set({ assistFind }),
   setRecording: (recording) => set({ recording }),
   setTrial: (trial) => set({ trial }),
   log: (kind, text, level) =>
     set((s) => ({
       events: [{ id: nextEventId++, at: Date.now(), kind, text, level }, ...s.events].slice(0, EVENT_LIMIT),
     })),
-  resetStreams: () => set({ vision: INITIAL_VISION, caption: null, alerts: [], targetLabel: null }),
+  resetStreams: () => set({ vision: INITIAL_VISION, caption: null, alerts: [], targetLabel: null, labels: null, assist: null, assistResult: null, assistFind: null }),
 }))
 
 /** Alerts that concern one part of the screen, most severe first. */

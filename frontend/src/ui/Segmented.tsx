@@ -38,15 +38,17 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
     >
       {/* The selection is a thumb that slides between options. */}
       <span aria-hidden="true" className="absolute top-[3px] bottom-[3px] left-0 -z-10 rounded-xs bg-ink shadow-[0_2px_6px_-2px_rgb(42_16_48/0.5)]" style={thumb} />
-      {options.map((option) => {
+      {options.map((option, index) => {
         const selected = option.value === value
+        // With no option selected (a custom value), the first stays reachable by Tab.
+        const tabbable = selected || (index === 0 && !options.some((o) => o.value === value))
         return (
           <button
             key={option.value}
             type="button"
             role="radio"
             aria-checked={selected}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={tabbable ? 0 : -1}
             data-value={option.value}
             disabled={disabled}
             onClick={() => onChange(option.value)}

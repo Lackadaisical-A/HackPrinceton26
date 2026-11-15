@@ -160,6 +160,10 @@ def test_select_target_takes_the_live_tag_names():
      LabelRequest("tag_visual", "my flask", bbox=(0.0, 0.0, 1.0, 1.0))),
     ({"type": "tag_text", "name": "my mug", "prompt": " red   mug "}, LabelRequest("tag_text", "my mug", prompt="red mug")),
     ({"type": "tag_text", "name": "My Mug"}, LabelRequest("tag_text", "my mug", prompt="my mug")),
+    ({"type": "tag_text", "name": "my mug", "prompts": [" red   mug ", "mug from above"]},
+     LabelRequest("tag_text", "my mug", prompts=("red mug", "mug from above"))),
+    ({"type": "tag_text", "name": "my mug", "prompt": "ignored", "prompts": ["red mug"]},
+     LabelRequest("tag_text", "my mug", prompts=("red mug",))),
     ({"type": "untag", "name": "my flask"}, LabelRequest("untag", "my flask")),
     ({"type": "untag"}, LabelRequest("untag", "")),
     ({"type": "tag_text", "name": 5}, LabelRequest("tag_text", "", prompt="")),
@@ -176,6 +180,11 @@ def test_label_payloads_are_read(payload, expected):
     ({"type": "tag_visual", "bbox": [0.2, 0.5, 0.3]}, "Cannot learn that: the box is not valid."),
     ({"type": "tag_text", "name": "my mug", "prompt": "  "}, "Cannot learn my mug: the description is empty."),
     ({"type": "tag_text", "name": "my mug", "prompt": 3}, "the description is empty."),
+    ({"type": "tag_text", "name": "my mug", "prompts": []}, "Cannot learn my mug: the descriptions are not valid."),
+    ({"type": "tag_text", "name": "my mug", "prompts": "red mug"}, "the descriptions are not valid."),
+    ({"type": "tag_text", "name": "my mug", "prompts": ["red mug", 3]}, "the descriptions are not valid."),
+    ({"type": "tag_text", "name": "my mug", "prompts": ["red mug", "  "]}, "the descriptions are not valid."),
+    ({"type": "tag_text", "name": "my mug", "prompts": ["mug"] * 9}, "the descriptions are not valid."),
 ])
 def test_unusable_label_payloads_carry_a_sentence(payload, problem):
     assert parse_label_request(payload).problem.endswith(problem)

@@ -1,5 +1,12 @@
 # PAUL console bridge
 
+Wearable calibration status is relayed from `tcp://127.0.0.1:5562` by default.
+The IMU launcher includes this source too. Restart an existing bridge after
+updating. `calibrate_arm`, `control_robot` and the other robot commands go to
+Wearable Lab on the existing command channel, unchanged. The bridge performs no
+calibration or motion itself; Wearable Lab's serial worker decides whether an
+enable is safe (fresh input, calibration, loads, limits) and reports the outcome.
+
 Connects the web console (`../frontend`) to the rest of PAUL. The other programs talk over ZMQ, which a browser cannot speak, so this program relays:
 
 - **Out:** every frame a ZMQ publisher sends (`<topic> <compact JSON>`) goes to every connected console as one WebSocket text message, unchanged. The bridge does not parse it.
@@ -31,7 +38,7 @@ Then open the console, go to Signals, choose "Live bridge" and connect.
 | What | Default | Flag |
 |---|---|---|
 | Consoles connect here (WebSocket) | `127.0.0.1:8765` | `--listen HOST:PORT` |
-| ZMQ publishers relayed to the consoles | `tcp://127.0.0.1:5555` (vision), `:5556` (pressure), `:5558` (robot) | `--from ENDPOINT`, repeat for several |
+| ZMQ publishers relayed to the consoles | `tcp://127.0.0.1:5555` (vision), `:5556` (pressure), `:5558` (robot/IMU), `:5561` (haptics) | `--from ENDPOINT`, repeat for several |
 | ZMQ endpoint the bridge binds for commands | `tcp://127.0.0.1:5557` | `--commands ENDPOINT` |
 
 The defaults match `computer_vision/config.yaml` (`transport`) and the console's default bridge address. Passing `--from` replaces the whole default list. `--verbose` also logs every dropped message.

@@ -107,6 +107,7 @@ class ArmModel:
         self.settings = validate_settings(settings or {})
         self.reference = None
         self.mounts = None
+        self.motion_ranges = {}
 
     @property
     def calibrated(self):
@@ -124,7 +125,7 @@ class ArmModel:
 
     def mounting_record(self):
         if self.mounts is None: raise ValueError("No learned mounting to save")
-        return dict(version=1,settings=self.settings,mounts=self.mounts)
+        return dict(version=1,settings=self.settings,mounts=self.mounts,motion_ranges=self.motion_ranges)
 
     def restore_mounting(self, record):
         """Never restore an old world reference across process/board restarts."""
@@ -140,6 +141,14 @@ class ArmModel:
             if dot(cross(basis[0],basis[1]),basis[2]) < .9999:
                 raise ValueError("Invalid saved mounting handedness")
             mounts[role] = basis
+        ranges = record.get('motion_ranges',{})
+        bounds = {'elbow_max_deg':(45,175),'shoulder_min_deg':(-90,-20),'shoulder_max_deg':(30,90),
+                  'pan_left_deg':(15,150),'pan_right_deg':(15,150)}
+        if not isinstance(ranges,dict) or set(ranges)-set(bounds): raise ValueError('Invalid saved motion ranges')
+        for name,value in ranges.items():
+            if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not bounds[name][0]<=value<=bounds[name][1]:
+                raise ValueError('Invalid saved motion range: '+name)
+        self.motion_ranges = dict(ranges)
         self.mounts,self.reference = mounts,None
 
     def calibrate(self, reference, lowered=None):
@@ -152,6 +161,39 @@ class ArmModel:
                 raise ValueError(f"{role}: {error}") from error
         self.reference = dict(reference)
         self.mounts = mounts
+        self.motion_ranges = {}
+        if lowered is not None:
+            elevation = self.geometry(lowered)['shoulder_deg']
+            if elevation<=-20: self.motion_ranges['shoulder_min_deg'] = elevation
+
+    def capture_motion_range(self,pose,frame):
+        if not self.calibrated: raise ValueError('Calibrate or recenter before learning motion range')
+        geometry = self.geometry(frame)
+        if pose=='C':
+            bend = geometry['elbow_deg']
+            if not 45<=bend<=175: raise ValueError('Bend your elbow at least 45 degrees to your comfortable maximum, then retry')
+            self.motion_ranges['elbow_max_deg'] = bend
+            return f'Elbow range saved: straight to {bend:.0f} degrees now spans the full robot elbow range.'
+        if pose=='D':
+            elevation = geometry['shoulder_deg']
+            if elevation<30: raise ValueError('Raise your upper arm at least 30 degrees above shoulder height, then retry')
+            if geometry['elbow_deg']>20: raise ValueError('Keep your elbow straight for the raised-arm shoulder capture')
+            self.motion_ranges['shoulder_max_deg'] = elevation
+            return f'Shoulder range saved: arm down to {elevation:.0f} degrees above horizontal now spans the full robot shoulder range.'
+        if pose in ('E','F'):
+            side = 'left' if pose=='E' else 'right'
+            heading = geometry['reach_heading_deg']
+            wrist = geometry['joints'][2]
+            if heading is None or math.hypot(wrist[0],wrist[1])<.08:
+                raise ValueError('Keep your wrist out from your shoulder, not directly above or below it, then retry pan capture')
+            sweep = heading if pose=='E' else -heading
+            if not 15<=sweep<=150:
+                raise ValueError(f'Reach at least 15 degrees to your {side} from pose A, keeping your torso still, then retry')
+            self.motion_ranges[f'pan_{side}_deg'] = sweep
+            complete = all(f'pan_{s}_deg' in self.motion_ranges for s in ('left','right'))
+            return (f'Shoulder pan {side} saved: {sweep:.0f} degrees. '+
+                    ('Your left/right sweep now spans the full robot pan range.' if complete else 'Capture the other side to enable pan scaling.'))
+        raise ValueError('Unknown motion-range pose')
 
     def geometry(self, frame=None):
         bases, boards = {}, {}
@@ -176,5 +218,8 @@ class ArmModel:
             "hand": add(wrist, scale(bases["hand"][0], lengths[2]*cfg["hand_from_wrist_pct"]/100)),
         }
         return {"joints": (origin, elbow, wrist, tip), "markers": markers, "bases": bases,
+                "motion_ranges":dict(self.motion_ranges),
+                "reach_heading_deg":math.degrees(math.atan2(wrist[1],wrist[0])) if math.hypot(wrist[0],wrist[1])>.02 else None,
+                "shoulder_deg":math.degrees(math.atan2(bases['upper'][0][2],math.hypot(*bases['upper'][0][:2]))),
                 "boards": boards, "elbow_deg": angle(bases["upper"][0], bases["forearm"][0]),
                 "wrist_deg": angle(bases["forearm"][0], bases["hand"][0])}

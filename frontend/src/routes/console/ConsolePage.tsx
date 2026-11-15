@@ -1,12 +1,17 @@
 import type { CSSProperties } from 'react'
 import { ArmbandPanel } from './ArmbandPanel'
+import { AssistPanel } from './AssistPanel'
 import { ArmPanel } from './ArmPanel'
 import { CameraView } from './CameraView'
 import { EventLog } from './EventLog'
-import { TaskPanel } from './TaskPanel'
+import { TargetPanel } from './TargetPanel'
 import { TouchLink } from './TouchLink'
 import { TrialBar } from './TrialBar'
 import { ControlInputPanel } from './ControlInputPanel'
+import { CalibrationPanel } from './CalibrationPanel'
+import { RobotControlPanel } from './RobotControlPanel'
+import { ReplayPanel } from './ReplayPanel'
+import { RobotTuningPanel } from './RobotTuningPanel'
 import { bus } from '../../telemetry/bus'
 import { usePolled } from '../signals/usePolled'
 
@@ -26,7 +31,13 @@ export default function ConsolePage() {
             <CameraView />
           </div>
           <div className="rise-in order-2 min-w-0 lg:order-none" style={{ '--i': 1 } as CSSProperties}>
-            <TaskPanel />
+            <TargetPanel />
+            <div className="mt-3 md:mt-4">
+              <AssistPanel />
+            </div>
+            <div className="mt-3 md:mt-4">
+              <ReplayPanel />
+            </div>
           </div>
           <div className="rise-in order-3 min-w-0 lg:order-none" style={{ '--i': 2 } as CSSProperties}>
             <TrialBar />
@@ -40,6 +51,9 @@ export default function ConsolePage() {
             <TouchLink />
           </div>
           <div className="rise-in order-5 min-w-0 lg:order-none" style={{ '--i': 2 } as CSSProperties}>
+            {!potInput && <div className="@container mb-3 md:mb-4"><RobotControlPanel /></div>}
+            {!potInput && <div className="@container mb-3 md:mb-4"><CalibrationPanel /></div>}
+            {!potInput && <div className="@container mb-3 md:mb-4"><RobotTuningPanel /></div>}
             <ArmPanel />
           </div>
           <div className="rise-in order-6 min-w-0 lg:order-none" style={{ '--i': 3 } as CSSProperties}>

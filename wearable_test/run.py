@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
-# dependencies = ["pyserial>=3.5", "pybullet==3.2.7", "pillow>=10", "feetech-servo-sdk==1.0.0", "draccus==0.10.0", "deepdiff==8.6.2", "numpy>=2,<3", "tqdm>=4"]
+# dependencies = ["pyserial>=3.5", "pybullet==3.2.7", "pillow>=10", "feetech-servo-sdk==1.0.0", "draccus==0.10.0", "deepdiff==8.6.2", "numpy>=2,<3", "tqdm>=4", "pyzmq>=26"]
 # ///
 """Local wearable bench: three IMUs, four coins, and the hand joystick."""
 import argparse
@@ -15,9 +15,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from wearable_test.configuration import load_model,save_model,config_status
 from wearable_test.io import WearableHub, DemoHub, fresh_frame, driver_status
 from wearable_test.model import ArmModel, DEFAULTS, ROLES, AXES, stable_average, add, scale, dot, cross
 from bno085_reader.joystick_calibration import load_calibration
+from robot_control.haptics import HapticFeedback, MOTORS, NAMES as MOTOR_NAMES
+from robot_control.joints import JOINTS
+from wearable_test.console import CalibrationConsole
 
 HERE = Path(__file__).resolve().parent
 SETTINGS = HERE / "settings.local.json"
@@ -120,9 +124,15 @@ class ArmCanvas(tk.Canvas):
 
 
 class App:
-    def __init__(self, root, hub, physical=None):
+    console = None
+    settings_dialog = None  # The open Tk dimensions dialog; web edits wait until it closes.
+
+    def __init__(self, root, hub, physical=None, vision_endpoint='tcp://127.0.0.1:5555', commands_endpoint='tcp://127.0.0.1:5557',
+                 haptics_endpoint='tcp://127.0.0.1:5561', calibration_endpoint='tcp://127.0.0.1:5562'):
         self.root, self.hub = root, hub
         self.physical,self.physical_panel = physical,None
+        self.feedback = HapticFeedback(hub,physical,vision_endpoint,commands_endpoint,haptics_endpoint) if physical is not None else None
+        if physical is not None: physical.haptics = self.feedback
         self.calibration_revision = 0
         self.root.title("Wearable Lab — 3 IMUs · 4 haptics · joystick"+(" [DEMO]" if hub.demo else ""))
         self.root.configure(bg=BG)
@@ -138,22 +148,19 @@ class App:
         style.configure("TButton", font=("Segoe UI", 10), padding=(10, 6))
         style.configure("TScale", background=PANEL)
         self.message = tk.StringVar(value="Start with pose A: arm straight forward, shoulder height, palm down.")
-        try:
-            self.model = ArmModel(json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {})
-        except (ValueError, TypeError, OSError):
-            self.model = ArmModel()
-            self.message.set("Saved settings invalid; using defaults. Open dimensions / axes to adjust.")
+        self.model,self.saved_config = load_model(SETTINGS,CALIBRATION,hub.demo)
+        self.saved_config_label = tk.StringVar(value=self.saved_config['detail'])
         self.pose_a = self.pose_b = self.capture = None
         self.recovery_reason = ""
         self.tick_error = None
-        if not hub.demo and CALIBRATION.exists():
-            try:
-                self.model.restore_mounting(json.loads(CALIBRATION.read_text(encoding="utf-8")))
-                self.recovery_reason = "Saved sensor mounting loaded; use Recenter arm in pose A."
-                self.message.set(self.recovery_reason)
-            except (OSError,ValueError,TypeError,KeyError) as error:
-                self.message.set(f"Saved mounting unavailable: {error}. Capture A/B.")
+        if self.saved_config['state'] in ('loaded','error'):
+            self.message.set(self.saved_config['detail'])
+            if self.saved_config['state']=='loaded': self.recovery_reason = self.saved_config['detail']
         self.joystick_calibration = load_calibration()
+        # Per-joint direction flips, shared by the URDF preview window and the web console.
+        self.reverse = dict.fromkeys(JOINTS, False)
+        # Manual coin-test intensity per (board, motor), shared by the Tk sliders and the web console.
+        self.motor_percent = {key: 40. for key in MOTORS}
         self.robot_preview = None
         self.epochs = None
         self.geometry = self.model.geometry()
@@ -168,8 +175,15 @@ class App:
             self.message.set("DEMO: synthetic animation and controls. No serial ports or motors are used.")
         self.hub.start()
         if self.physical is not None:
+            self.physical.bind_hub(self.hub)
             self.physical.start()
+            self.feedback.start()
             self.open_physical_controls()
+        # Also without a robot: the browser can calibrate and test coins on the sensor bench / demo.
+        try:
+            self.console = CalibrationConsole(self, commands_endpoint, calibration_endpoint)
+        except Exception:
+            logging.getLogger('wearable').exception('Web calibration unavailable')
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.bind("<Escape>", lambda e: self.stop_all())
         self.tick()
@@ -198,9 +212,20 @@ class App:
         ttk.Button(buttons, text="1 · Capture A", command=lambda: self.begin_capture("A")).pack(side="left", expand=True, fill="x", padx=(0,4))
         ttk.Button(buttons, text="2 · Capture B", command=lambda: self.begin_capture("B")).pack(side="left", expand=True, fill="x")
         ttk.Label(sidebar, text="Each capture: 3s to get ready, then hold still 2s.\nAuto axes learn the mounting from both poses.", style="Muted.TLabel").pack(anchor="w", pady=(5,7))
+        ttk.Label(sidebar,text="FULL JOINT RANGE (after A/B or recenter)\nC  Bend your elbow to your comfortable maximum.\nD  Raise your straight arm to your highest reach.",style="Muted.TLabel").pack(anchor='w',pady=(4,4))
+        ranges = ttk.Frame(sidebar,style='Panel.TFrame')
+        ranges.pack(fill='x',pady=(0,6))
+        ttk.Button(ranges,text='3 · Bent elbow',command=lambda:self.begin_capture('C')).pack(side='left',expand=True,fill='x',padx=(0,4))
+        ttk.Button(ranges,text='4 · Arm raised',command=lambda:self.begin_capture('D')).pack(side='left',expand=True,fill='x')
+        ttk.Label(sidebar,text='PAN: reach to each comfortable side; torso still.\nPose A stays centered. Capture both sides.',style='Muted.TLabel').pack(anchor='w',pady=(0,4))
+        pan_ranges = ttk.Frame(sidebar,style='Panel.TFrame')
+        pan_ranges.pack(fill='x',pady=(0,6))
+        ttk.Button(pan_ranges,text='5 · Pan left',command=lambda:self.begin_capture('E')).pack(side='left',expand=True,fill='x',padx=(0,4))
+        ttk.Button(pan_ranges,text='6 · Pan right',command=lambda:self.begin_capture('F')).pack(side='left',expand=True,fill='x')
         self.robot_button = ttk.Button(sidebar,text="Enable SO-101 URDF preview",command=self.open_robot_preview,state="disabled")
         self.robot_button.pack(fill="x",pady=(0,4))
         ttk.Label(sidebar,text="Recenter keeps learned mounting after a reset.",style="Muted.TLabel").pack(anchor="w",pady=(0,6))
+        ttk.Label(sidebar,textvariable=self.saved_config_label,style='Muted.TLabel',wraplength=340).pack(anchor='w',pady=(0,4))
         for role, sensor in ROLES.items():
             label = ttk.Label(sidebar, text=NAMES[role]+"\nWaiting for IMU…", style="Panel.TLabel", foreground=COLORS[role])
             label.pack(anchor="w", pady=(1,4))
@@ -220,18 +245,25 @@ class App:
         self.joy_label.pack(side="left", padx=12)
         cal = self.joystick_calibration
         ttk.Label(joystick_panel, text=f"Center X={cal.center_x:g} / Y={cal.center_y:g}\n{cal.deadzone:.0%} dead zone · calibrated output −1…+1", style="Muted.TLabel").pack(anchor="w", pady=(6,0))
+        if self.feedback is not None:
+            feedback_row = ttk.Frame(self.root,padding=(14,5))
+            feedback_row.pack(fill='x')
+            self.feedback_button = ttk.Button(feedback_row,text='Enable guidance + resistance',command=self.toggle_feedback)
+            self.feedback_button.pack(side='left',padx=(0,12))
+            self.feedback_label = ttk.Label(feedback_row,text='Forearm = UP. Palm = DOWN. Taps guide; steady vibration means resistance.')
+            self.feedback_label.pack(side='left')
         motors = ttk.Frame(self.root, padding=(14,10))
         motors.pack(fill="x")
-        for index, (board, motor) in enumerate((('wroom',1),('wroom',2),('s3',1),('s3',2))):
+        for index, (board, motor) in enumerate(MOTORS):
             frame = ttk.Frame(motors, style="Panel.TFrame", padding=10)
             frame.grid(row=0, column=index, sticky="nsew", padx=(0,8) if index < 3 else 0)
             motors.columnconfigure(index, weight=1, uniform="motors")
-            ttk.Label(frame, text=f"{board.upper()}  /  {'DRV2605L' if motor == 1 else 'GPIO15 · transistor'}", style="Panel.TLabel", font=("Segoe UI",10,"bold")).pack(anchor="w")
-            value = tk.DoubleVar(value=40)
-            label = ttk.Label(frame, text="40% · idle", style="Muted.TLabel")
+            ttk.Label(frame, text=MOTOR_NAMES[index], style="Panel.TLabel", font=("Segoe UI",10,"bold")).pack(anchor="w")
+            value = tk.DoubleVar(value=self.motor_percent[(board,motor)])
+            label = ttk.Label(frame, text=f"{value.get():.0f}% · idle", style="Muted.TLabel")
             label.pack(anchor="w", pady=(4,0))
             slider = ttk.Scale(frame, from_=0, to=100, variable=value,
-                               command=lambda v,b=board,m=motor: self.hub.intensity(b,m,float(v)))
+                               command=lambda v,b=board,m=motor: self.set_motor_percent(b,m,float(v)))
             slider.pack(fill="x", pady=5)
             row = ttk.Frame(frame, style="Panel.TFrame")
             row.pack(fill="x")
@@ -246,15 +278,31 @@ class App:
         ttk.Label(self.root, textvariable=self.message, wraplength=1320, padding=(20,3), foreground="#ffcb70").pack(fill="x")
         ttk.Label(self.root, text="Positions are estimated from orientation + arm lengths. Shoulder stays fixed.  •  Motor ACKs confirm commands; feel each coin to confirm vibration.", font=("Segoe UI",9), foreground=MUTED, padding=(20,8)).pack(fill="x")
 
-    def run_motor(self, board, motor, seconds):
+    def set_motor_percent(self, board, motor, percent):
+        """Next manual test level; also adjusts a test that is already running."""
+        if not math.isfinite(percent) or not 0 <= percent <= 100:
+            raise ValueError("Intensity must be 0-100%")
+        self.motor_percent[(board,motor)] = percent
+        self.hub.intensity(board, motor, percent)
+
+    def run_motor(self, board, motor, seconds, percent=None):
+        """Start a manual coin test. Returns an error message, or None once started."""
         if self.capture:
             self.message.set("Finish calibration before testing motors.")
-            return
+            return "Finish calibration before testing motors."
         try:
-            self.hub.motor(board, motor, self.motor_widgets[(board,motor)][0].get(), seconds)
+            if percent is not None: self.set_motor_percent(board, motor, percent)
+            if self.feedback is not None: self.feedback.stop('manual motor test')
+            self.hub.motor(board, motor, self.motor_percent[(board,motor)], seconds)
             self.message.set(f"{board.upper()} motor {motor}: test started. Adjust the slider while it runs; Esc stops all.")
         except ValueError as error:
             self.message.set(str(error))
+            return str(error)
+        return None
+
+    def toggle_feedback(self):
+        if self.feedback.snapshot()['enabled']: self.feedback.stop('operator switch')
+        elif not self.capture: self.feedback.enable()
 
     def open_robot_preview(self):
         if not self.model.calibrated or self.capture:
@@ -265,7 +313,8 @@ class App:
             if self.robot_preview is None or self.robot_preview.closed:
                 from wearable_test.robot_preview import RobotPreview
                 self.robot_preview = RobotPreview(self.root,self.joystick_calibration,self.stop_all,
-                                                  lambda: self.begin_capture("R"),self.physical.pause if self.physical else None)
+                                                  lambda: self.begin_capture("R"),self.physical.pause if self.physical else None,
+                                                  reverse=self.reverse,on_reverse=self.set_reverse)
             else:
                 self.robot_preview.enable()
             self.message.set("SO-101 preview enabled. Calibrated IMUs drive the arm; joystick Y sets claw position. Simulation only.")
@@ -273,9 +322,24 @@ class App:
             self.message.set(f"Could not open SO-101 preview: {error}")
 
     def stop_all(self):
+        if self.console is not None: self.console.invalidate()
+        self.capture = None
+        if self.hub.demo: self.hub.pose = None
+        if self.feedback is not None: self.feedback.stop('operator Stop / Esc')
         if self.physical is not None: self.physical.pause("operator Stop / Esc")
         self.hub.stop()
         self.message.set("Physical arm/claw paused; wearable motors stopped." if self.physical else "All motor outputs stopped.")
+
+    def set_reverse(self, joint, reverse):
+        """Flip one joint's mapping direction (URDF preview checkbox or web console)."""
+        if joint not in self.reverse: raise ValueError("Unknown joint")
+        if self.reverse[joint] == bool(reverse): return
+        self.reverse[joint] = bool(reverse)
+        if self.console is not None: self.console.invalidate()
+        # The physical input epoch includes every direction, so active following pauses itself.
+        self.message.set(f"{joint.replace('_',' ').title()} direction {'reversed' if reverse else 'normal'}. "
+                         "Following paused; enable the arm again when ready.")
+        logging.getLogger("wearable").info("Joint direction %s reverse=%s",joint,bool(reverse))
 
     def open_physical_controls(self):
         if self.physical is None: return
@@ -284,8 +348,11 @@ class App:
             self.physical_panel = PhysicalPanel(self.root,self.physical,self.stop_all)
         else: self.physical_panel.window.lift()
 
-    def begin_capture(self, pose):
+    def begin_capture(self, pose, lift=True):
         if self.capture:
+            return
+        if pose in ('C','D','E','F') and not self.model.calibrated:
+            self.message.set('Calibrate A/B or recenter before learning elbow and shoulder range.')
             return
         if pose == "B" and self.pose_a is None:
             self.message.set("Capture pose A first, then lower your straight arm for pose B.")
@@ -299,16 +366,19 @@ class App:
         except ValueError as error:
             self.message.set(str(error))
             return
+        if self.console is not None: self.console.invalidate()
+        if self.feedback is not None: self.feedback.stop('calibration/recenter started')
         self.hub.stop()
         if self.physical is not None: self.physical.pause("calibration/recenter started")
         if pose == "A":
             self.pose_a = self.pose_b = None
             self.model.reference = self.model.mounts = None
+            self.model.motion_ranges = {}
         elif pose == "R":
             self.model.invalidate_reference()
         if self.hub.demo:
             self.hub.pose = "A" if pose == "R" else pose
-        self.root.lift()
+        if lift: self.root.lift()
         self.capture = {"pose": pose, "start": time.monotonic(), "samples": {s: [] for s in ROLES.values()},
                         "last": {}, "epochs": tuple(b["epoch"] for b in snapshot.values())}
 
@@ -322,7 +392,8 @@ class App:
             frame, sequences = fresh_frame(snapshot, now)
             elapsed = now-capture["start"]
             pose = capture["pose"]
-            label = "RECENTER: straight forward, palm down" if pose == "R" else f"POSE {pose}"
+            label = {'R':'RECENTER: straight forward, palm down','E':'PAN LEFT: comfortable left reach, torso still',
+                     'F':'PAN RIGHT: comfortable right reach, torso still'}.get(pose,f'POSE {pose}')
             if elapsed < 3:
                 self.message.set(f"{label}: get into position… {math.ceil(3-elapsed)}")
                 return
@@ -345,7 +416,9 @@ class App:
             elif pose == "R":
                 self.model.recenter(average)
                 self.pose_a,self.pose_b = average,None
-                self.calibration_ready("Recentered. Preview follows your arm again; mounting calibration was kept.")
+                self.calibration_ready("Recentered. Mounting and learned elbow, shoulder and pan ranges were kept. Enable robot control when ready.")
+            elif pose in ('C','D','E','F'):
+                self.calibration_ready(self.model.capture_motion_range(pose,average))
             else:
                 self.pose_b = average
                 self.model.calibrate(self.pose_a, self.pose_b)
@@ -356,6 +429,7 @@ class App:
             self.message.set(f"Calibration: {error}")
 
     def calibration_ready(self, message):
+        if self.console is not None: self.console.invalidate()
         self.calibration_revision += 1
         if self.physical is not None: self.physical.pause("arm reference changed; enable again from this pose")
         self.recovery_reason = ""
@@ -363,11 +437,11 @@ class App:
             self.hub.pose = None
         else:
             try:
-                temporary = CALIBRATION.with_suffix(".tmp")
-                temporary.write_text(json.dumps(self.model.mounting_record(),indent=2)+"\n",encoding="utf-8")
-                temporary.replace(CALIBRATION)
-            except OSError as error:
-                message += f" Mounting could not be saved: {error}"
+                self.saved_config = save_model(self.model,CALIBRATION)
+            except (OSError,ValueError) as error:
+                self.saved_config = config_status(CALIBRATION,'error',f'Configuration could not be saved: {error}. Previous saved file was kept.')
+                message += ' '+self.saved_config['detail']
+            if hasattr(self,'saved_config_label'): self.saved_config_label.set(self.saved_config['detail'])
         if self.robot_preview is not None and not self.robot_preview.closed:
             self.robot_preview.calibration_changed()
         logging.getLogger("wearable").info(message)
@@ -377,8 +451,14 @@ class App:
         if self.capture:
             self.message.set("Finish the current capture before changing dimensions or axes.")
             return
+        if self.console is not None: self.console.invalidate()
         if self.physical is not None: self.physical.pause("editing arm calibration settings")
+        if self.settings_dialog is not None:
+            self.settings_dialog.lift()
+            return
         dialog = tk.Toplevel(self.root)
+        self.settings_dialog = dialog
+        dialog.bind("<Destroy>", lambda event: setattr(self, "settings_dialog", None) if event.widget is dialog else None)
         dialog.title("Arm dimensions and IMU mounting")
         dialog.configure(bg=BG)
         dialog.transient(self.root)
@@ -403,17 +483,28 @@ class App:
             try:
                 settings = {k: float(v.get()) for k,v in fields.items()}
                 settings["axes"] = {k:v.get() for k,v in axes.items()}
-                model = ArmModel(settings)
-                SETTINGS.write_text(json.dumps(model.settings, indent=2)+"\n")
+                self.apply_arm_settings(settings)
             except (ValueError, OSError) as error:
                 messagebox.showerror("Check settings", str(error), parent=dialog)
                 return
-            self.model = model
-            self.pose_a = self.pose_b = None
-            self.recovery_reason = "Settings changed; capture A/B."
-            self.message.set("Settings saved. Capture pose A to start calibration.")
             dialog.destroy()
         ttk.Button(body, text="Save and recalibrate", command=save).grid(row=row+1,column=0,columnspan=2,sticky="ew")
+
+    def apply_arm_settings(self, settings):
+        """Validate, persist and adopt new dimensions/axes; this clears the current calibration."""
+        model = ArmModel(settings)
+        SETTINGS.write_text(json.dumps(model.settings, indent=2)+"\n")
+        self.stop_all()
+        self.model = model
+        self.pose_a = self.pose_b = None
+        self.geometry = self.model.geometry()
+        self.recovery_reason = "Settings changed; capture A/B."
+        self.saved_config = config_status(CALIBRATION,'none','Dimensions/axes changed. Capture A/B to save matching calibration; the previous calibration file was kept.')
+        if hasattr(self,'saved_config_label'): self.saved_config_label.set(self.saved_config['detail'])
+        if self.robot_preview is not None and not self.robot_preview.closed:
+            self.robot_preview.calibration_changed()
+        self.message.set("Settings saved. Capture pose A to start calibration.")
+        logging.getLogger("wearable").info("Arm settings changed: %s",model.settings)
 
     def tick(self):
         if self.closed:
@@ -434,10 +525,12 @@ class App:
             if not self.closed: self.root.after(20,self.tick)
 
     def tick_body(self):
+        if self.feedback is not None: self.feedback.heartbeat()
         snapshot = self.hub.snapshot()
         now = time.monotonic()
         epochs = tuple(b["epoch"] for b in snapshot.values())
         if self.epochs is not None and self.epochs != epochs:
+            if self.console is not None: self.console.invalidate()
             if self.physical is not None: self.physical.pause("board/IMU restarted or reconnected")
             changed = [f"{board['port']}: {board.get('reset_reason') or board['message']}"
                        for index,board in enumerate(snapshot.values()) if epochs[index] != self.epochs[index]]
@@ -448,6 +541,7 @@ class App:
             self.message.set(self.recovery_reason+" · "+action)
             logging.getLogger("wearable").info("Arm reference held: %s",self.message.get())
         self.epochs = epochs
+        if self.console is not None: self.console.poll()
         self.capture_tick(snapshot, now)
         stale_reason = ""
         try:
@@ -460,11 +554,10 @@ class App:
             if self.model.mounts is None:
                 self.geometry = self.model.geometry()
         if self.physical is not None:
-            from robot_control.wearable import input_packet
-            reverse = self.robot_preview.mapping.reverse if self.robot_preview is not None else {}
-            self.physical.submit(input_packet(self.geometry,snapshot,self.model.calibrated and fresh and not self.capture,
+            reverse = self.reverse
+            self.physical.submit_reference(self.model,snapshot,self.model.calibrated and not self.capture,
                                              stale_reason or self.recovery_reason or "calibrate/recenter the arm",
-                                             self.calibration_revision,reverse,now))
+                                             self.calibration_revision,reverse,now)
         self.canvas.draw(self.geometry,self.model.calibrated,fresh)
         self.robot_button.configure(state="normal" if self.model.calibrated and fresh and not self.capture else "disabled")
         self.recenter_button.configure(state="normal" if self.model.mounts is not None and fresh and not self.capture else "disabled")
@@ -476,9 +569,15 @@ class App:
                 action = "Recenter arm in pose A" if self.model.mounts is not None else "Capture A and B"
                 reason = (self.recovery_reason+"; " if self.recovery_reason else "")+action
             self.robot_preview.update(self.geometry,snapshot["wroom"]["joystick"],self.model.calibrated and not self.capture,fresh,now,reason)
+        if self.console is not None: self.console.publish(snapshot, now)
         if now < self.next_status_ui:
             return
         self.next_status_ui = now+.1
+        if self.feedback is not None:
+            feedback = self.feedback.snapshot()
+            self.feedback_button.configure(text='Pause vibration feedback' if feedback['enabled'] else 'Enable guidance + resistance',
+                                           state='disabled' if self.capture else 'normal')
+            self.feedback_label.configure(text=feedback['detail'])
         for name, board in snapshot.items():
             fields = board["fields"]
             status = "connected" if board["connected"] else "OFFLINE"
@@ -493,12 +592,14 @@ class App:
                 self.sensor_labels[sensor].configure(text=NAMES[role]+"\n"+detail)
             for motor in (1,2):
                 value, label, test, run, status_label = self.motor_widgets[(name,motor)]
+                if abs(value.get()-self.motor_percent[(name,motor)]) > .5: value.set(self.motor_percent[(name,motor)])  # Web edit.
                 state = board["motors"][motor]
                 available = board["connected"] and now-board["status_at"] < 6 and fields.get("DRV2605L" if motor==1 else "PWM2") == "1"
                 for button in (test, run):
                     button.configure(state="normal" if available and not self.capture else "disabled")
                 remaining = max(0, state["until"]-now)
-                label.configure(text=f"{value.get():.0f}% · "+(f"RUNNING {remaining:.1f}s · {state['acks']} ACKs" if state["percent"] else "idle"))
+                percent = state['percent'] if state.get('feedback') else value.get()
+                label.configure(text=f"{percent:.0f}% · "+(f"FEEDBACK · {state['acks']} ACKs" if state.get('feedback') else f"RUNNING {remaining:.1f}s · {state['acks']} ACKs" if state["percent"] else "idle"))
                 if not available:
                     detail = driver if motor==1 else "PWM unavailable / no recent status"
                 elif "stopped:" in board["message"] or board["message"].startswith("ERROR"):
@@ -526,6 +627,7 @@ class App:
 
     def close(self):
         self.closed = True
+        if self.console is not None: self.console.close()
         self.hub.stop()
         if self.physical is not None: self.physical.close()
         if self.physical_panel is not None: self.physical_panel.close()
@@ -545,9 +647,19 @@ def main():
     parser.add_argument("--wroom", default="COM7")
     parser.add_argument("--s3", default="COM8")
     parser.add_argument("--robot-port",help="Optional physical SO-101 port; connects read-only until manual enable")
+    parser.add_argument("--telemetry", action="store_true", help="Publish measured IMU-controlled robot feedback to the web console")
+    parser.add_argument("--telemetry-endpoint", default="tcp://127.0.0.1:5558")
+    parser.add_argument("--vision-endpoint", default="tcp://127.0.0.1:5555")
+    parser.add_argument("--commands-endpoint", default="tcp://127.0.0.1:5557")
+    parser.add_argument("--haptics-endpoint", default="tcp://127.0.0.1:5561")
+    parser.add_argument("--calibration-endpoint", default="tcp://127.0.0.1:5562")
+    parser.add_argument("--assist-endpoint", default="tcp://127.0.0.1:5563",
+                        help="where the assist process publishes Gemini's smart-replay actions")
     parser.add_argument("--demo", action="store_true", help="Synthetic inputs, no serial ports or physical motor writes")
     parser.add_argument("--check", action="store_true", help="Read telemetry for 6 seconds, print health, release ports")
     args = parser.parse_args()
+    if args.telemetry and not args.robot_port:
+        parser.error("--telemetry requires --robot-port for measured feedback")
     if args.robot_port and (args.demo or args.check):
         parser.error("Physical robot mode cannot use --demo or --check. Use sensor.ps1 robot-check for read-only checks.")
     logger.info("Starting Wearable Lab (%s)","demo" if args.demo else f"live {args.wroom}/{args.s3}")
@@ -577,11 +689,15 @@ def main():
         from robot_control.arm import choose_port
         from robot_control.wearable import WearableRobot
         try:
-            physical = WearableRobot(choose_port(args.robot_port,(args.wroom,args.s3)),load_calibration())
+            physical = WearableRobot(choose_port(args.robot_port,(args.wroom,args.s3)),load_calibration(),
+                                     telemetry_endpoint=args.telemetry_endpoint if args.telemetry else None)
         except (ValueError,OSError) as error:
             root.destroy()
             parser.error(str(error))
-    App(root, hub, physical)
+        from robot_control.agent_link import AgentInbox
+        physical.agent_inbox = AgentInbox(args.assist_endpoint)
+        physical.agent_inbox.start()
+    App(root, hub, physical,args.vision_endpoint,args.commands_endpoint,args.haptics_endpoint,args.calibration_endpoint)
     try:
         root.mainloop()
     finally:

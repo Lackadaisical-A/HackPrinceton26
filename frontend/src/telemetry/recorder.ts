@@ -5,6 +5,11 @@ import { TOPICS } from './contracts'
 const CHUNK_LINES = 4000
 /** About 90 minutes at the full simulated rate. */
 export const MAX_LINES = 1_000_000
+/**
+ * Wearable Lab's calibration status is setup state (about 6 KB at 10 Hz), not trial data: one per
+ * second is kept, so a recording shows each change without growing by megabytes a minute.
+ */
+export const CALIBRATION_RECORD_MS = 1000
 
 export interface RecordingHeader {
   source: 'simulator' | 'websocket'
@@ -26,6 +31,7 @@ export class Recorder {
   private pending: string[] = []
   private lines = 0
   private onFull: (() => void) | null = null
+  private calibrationAtMs = -Infinity
 
   constructor(bus: TelemetryBus) {
     this.bus = bus
@@ -45,6 +51,7 @@ export class Recorder {
     this.chunks = []
     this.pending = []
     this.lines = 0
+    this.calibrationAtMs = -Infinity
     this.onFull = onFull
     this.write({
       type: 'header',
@@ -57,6 +64,11 @@ export class Recorder {
       note: 'Each line: {topic, recv, msg}. recv is arrival time in Unix seconds. Video is not recorded.',
     })
     this.unsubscribe = this.bus.onAny((topic, msg) => {
+      if (topic === 'calibration') {
+        const nowMs = Date.now()
+        if (nowMs - this.calibrationAtMs < CALIBRATION_RECORD_MS) return
+        this.calibrationAtMs = nowMs
+      }
       this.write({ topic, recv: Math.round(Date.now()) / 1000, msg })
       this.lines++
       if (this.lines >= MAX_LINES) this.onFull?.()

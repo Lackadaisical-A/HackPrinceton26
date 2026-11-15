@@ -21,6 +21,8 @@ def test_default_matches_working_command_and_dry_run_is_forwarded():
 @pytest.mark.parametrize("arguments", [
     ["--leader-port", "COM6"], ["--web-port", "8765"], ["--stream-port", "0"],
     ["--", "--auto-enable"], ["--", "--robot-port=COM7"],
+    ["--calibration-pub-port", "5561"], ["--calibration-pub-port", "65536"],
+    ["--", "--calibration-endpoint=tcp://127.0.0.1:6000"],
 ])
 def test_reject_ambiguous_ports_or_automatic_motion(arguments):
     with pytest.raises(SystemExit):
@@ -42,6 +44,15 @@ def test_bridge_binds_first_command_endpoint_from_list_or_string():
     cfg = session_config(ROOT / "computer_vision" / "config.yaml", 18766)
     assert bridge_commands_endpoint(cfg) == "tcp://127.0.0.1:5557"
     assert bridge_commands_endpoint({"transport": {"command_sub": "tcp://127.0.0.1:5557"}}) == "tcp://127.0.0.1:5557"
+
+
+def test_imu_launcher_uses_both_sensor_ports_and_measured_telemetry():
+    args = parse_args(['--controller','imu'])
+    assert controller_argv(args) == ['--wroom','COM7','--s3','COM8','--robot-port','COM6',
+                                    '--telemetry','--telemetry-endpoint','tcp://127.0.0.1:5558']
+    for flags in (['--dry-run'],['--s3-port','COM7'],['--wroom-port','COM6'],['--','--demo']):
+        with pytest.raises(SystemExit):
+            parse_args(['--controller','imu',*flags])
 
 
 def test_services_started_by_launcher_are_stopped_on_controller_failure(tmp_path):

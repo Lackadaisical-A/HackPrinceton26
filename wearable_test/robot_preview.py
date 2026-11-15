@@ -100,12 +100,16 @@ def render_worker(connection):
 
 class RobotPreview:
     """A second Tk view renders the actual URDF with Bullet's CPU renderer."""
-    def __init__(self, parent, calibration, on_stop=None, on_recenter=None, on_pause=None):
+    def __init__(self, parent, calibration, on_stop=None, on_recenter=None, on_pause=None, reverse=None, on_reverse=None):
         import tkinter as tk
         from tkinter import ttk
         from PIL import Image, ImageTk
         self.Image, self.ImageTk = Image, ImageTk
         self.mapping = RobotMapping(calibration)
+        # Directions are owned by Wearable Lab (shared with the web console) when it passes them in.
+        if reverse is not None: self.mapping.reverse = reverse
+        self.on_reverse = on_reverse
+        self.reverse_vars = {}
         self.closed, self.running, self.valid_inputs = False, True, True
         self.stale_since = None
         self.on_stop = on_stop
@@ -163,13 +167,18 @@ class RobotPreview:
             table.columnconfigure(col,weight=1)
             self.labels[joint] = ttk.Label(cell,text=JOINT_LABELS[joint])
             self.labels[joint].pack(anchor="w")
-            variable = tk.BooleanVar(value=False)
+            variable = tk.BooleanVar(value=bool(self.mapping.reverse.get(joint,False)))
+            self.reverse_vars[joint] = variable
             ttk.Checkbutton(cell,text="Reverse direction",variable=variable,
-                            command=lambda j=joint,v=variable: self.mapping.reverse.__setitem__(j,v.get())).pack(anchor="w")
+                            command=lambda j=joint,v=variable: self.set_reverse(j,v.get())).pack(anchor="w")
         connection_note = "Physical control uses its separate enable/stop window." if on_pause else "No physical robot connection."
         ttk.Label(self.window,text=f"Drag to orbit / scroll to zoom. Joint limits come from the URDF.\nY=0: max/open · Y={calibration.center_y:g}: halfway · Y=4095: min/closed. {connection_note}",
                   padding=(12,8),justify="left").pack(fill="x")
         self.window.after(20,self.render)
+
+    def set_reverse(self, joint, value):
+        if self.on_reverse is not None: self.on_reverse(joint,value)
+        else: self.mapping.reverse[joint] = value
 
     def enable(self):
         self.running = True
@@ -232,6 +241,9 @@ class RobotPreview:
                                     state="normal" if self.running or self.valid_inputs else "disabled")
         for joint,value in self.mapping.current.items():
             self.labels[joint].configure(text=f"{JOINT_LABELS[joint]}  {math.degrees(value):+.1f}°")
+        for joint,variable in getattr(self,'reverse_vars',{}).items():
+            wanted = bool(self.mapping.reverse.get(joint,False))  # A web-console change shows here too.
+            if variable.get() != wanted: variable.set(wanted)
 
     def orbit(self, event):
         if self.drag_at:

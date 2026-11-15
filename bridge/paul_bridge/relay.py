@@ -37,6 +37,9 @@ DEFAULT_SOURCES = (
     "tcp://127.0.0.1:5555",  # vision
     "tcp://127.0.0.1:5556",  # pressure
     "tcp://127.0.0.1:5558",  # robot
+    "tcp://127.0.0.1:5561",  # wearable haptics, independent of robot power
+    "tcp://127.0.0.1:5562",  # wearable calibration status, independent of robot power
+    "tcp://127.0.0.1:5563",  # assist: Gemini scene suggestions (../assist)
 )
 DEFAULT_COMMANDS = "tcp://127.0.0.1:5557"
 

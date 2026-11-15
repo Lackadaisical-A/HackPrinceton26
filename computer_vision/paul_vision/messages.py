@@ -15,6 +15,7 @@ from .types import STATUS_OK, STATUSES, BBox, Guidance, Track
 TOPIC_VISION = "vision"
 TOPIC_COMMAND = "command"  # consumed, not published: see commands.py
 TOPIC_PRESSURE = "pressure"  # consumed; published by pressure_bridge.py or mock_pressure.py
+TOPIC_LABELS = "labels"  # published beside `vision`: what can be a target (see build_labels_message)
 TOPIC_ROBOT = "robot"  # consumed (gripper_load.py); published by the arm controller, leslider_control/telemetry.py
 PRESSURE_PADS = 4  # left tip, left base, right tip, right base (the web console's order)
 
@@ -189,3 +190,52 @@ def validate_pressure(msg: dict) -> None:
             f"raw is not {PRESSURE_PADS} numbers")
     require(isinstance(norm, list) and len(norm) == PRESSURE_PADS and all(is_number(v) and 0 <= v <= 1 for v in norm),
             f"norm is not {PRESSURE_PADS} numbers in 0..1")
+
+
+# --- the `labels` topic: what select_target accepts, for the console's target picker ---
+#
+# labels {"t":1731542400.1,"classes":["cup","bottle"],"tags":[{"name":"my flask","views":4}],"busy":null}
+#
+# `classes` is detector.classes. `tags` are the names the operator taught, in the order they were first taught, each
+# with its number of views (pictures and descriptions); a tag may carry the name of a class (views added to it).
+# `busy` is the name being learned or forgotten right now, or null. Sent on vision_pub when it changes and every
+# labels.publish_s.
+
+
+def build_labels_message(*, t: float, classes, tags, busy: str | None = None) -> dict:
+    """Build and validate a labels payload. `tags`: (name, number of views) pairs. Raises ValueError if the result
+    breaks the contract."""
+    msg = {
+        "t": round(float(t), 4),
+        "classes": [str(c) for c in classes],
+        "tags": [{"name": str(name), "views": int(views)} for name, views in tags],
+        "busy": busy,
+    }
+    validate_labels(msg)
+    return msg
+
+
+def validate_labels(msg: dict) -> None:
+    """Raise ValueError if `msg` breaks the labels message contract (exactly the keys t, classes, tags, busy)."""
+
+    def require(ok: bool, problem: str) -> None:
+        if not ok:
+            raise ValueError(f"invalid labels message: {problem}")
+
+    def name(value) -> bool:
+        return isinstance(value, str) and bool(value)
+
+    require(isinstance(msg, dict), "not an object")
+    expected = {"t", "classes", "tags", "busy"}
+    require(set(msg) == expected, f"keys {sorted(msg)} != {sorted(expected)}")
+    require(is_number(msg["t"]), "t is not a number")
+    classes, tags = msg["classes"], msg["tags"]
+    require(isinstance(classes, list) and all(name(c) for c in classes), "classes is not a list of names")
+    require(isinstance(tags, list), "tags is not a list")
+    for tag in tags:
+        require(isinstance(tag, dict) and set(tag) == {"name", "views"}, "a tag is not {name, views}")
+        require(name(tag["name"]), "a tag's name is not a name")
+        require(isinstance(tag["views"], int) and not isinstance(tag["views"], bool) and tag["views"] >= 1,
+                "a tag's views is not a count of 1 or more")
+    require(len({tag["name"] for tag in tags}) == len(tags), "a tag is listed twice")
+    require(msg["busy"] is None or name(msg["busy"]), "busy is neither null nor a name")

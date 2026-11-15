@@ -83,7 +83,10 @@ class Kinematics:
 
 
 class Retargeter:
-    def __init__(self, urdf):
+    def __init__(self, urdf, wrist_roll_gain=2.):
+        if not math.isfinite(wrist_roll_gain) or not .25<=wrist_roll_gain<=4:
+            raise ValueError('Wrist roll gain must be .25..4')
+        self.wrist_roll_gain = wrist_roll_gain
         self.kinematics = Kinematics(urdf)
         self.limits = self.kinematics.limits
         self.neutral = self.kinematics.forward_pose()
@@ -94,7 +97,8 @@ class Retargeter:
         low,high = self.limits["elbow_flex"]
         self.bend_sign = -1 if high-self.neutral["elbow_flex"] >= self.neutral["elbow_flex"]-low else 1
         self.solution = dict(self.neutral)
-        self.previous = dict(heading=0.,hand=0.,roll=0.)
+        self.previous = dict(heading=0.,pan_heading=0.,hand=0.,roll=0.)
+        self.previous_upper = 0.
         self.limited = []
 
     def clamp(self, name, value):
@@ -112,8 +116,24 @@ class Retargeter:
         if math.hypot(reach[0],reach[1]) > .01:
             heading = nearest_angle(math.atan2(reach[1],reach[0]),heading)
             self.previous["heading"] = heading
-        pan = self.clamp("shoulder_pan",-heading)
+        ranges = geometry.get('motion_ranges',{})
+        learned_pan = all(f'pan_{side}_deg' in ranges for side in ('left','right'))
+        pan = max(self.limits['shoulder_pan'][0],min(self.limits['shoulder_pan'][1],-heading))
+        # The human reach plane drives flexion/roll math. Pan amplification must
+        # not project the reach into the amplified robot plane and distort those joints.
         plane = (math.cos(-pan),math.sin(-pan),0.)
+        if learned_pan:
+            measured_heading = geometry.get('reach_heading_deg',math.degrees(heading))
+            pan_heading = self.previous['pan_heading']
+            if measured_heading is not None:
+                pan_heading = nearest_angle(math.radians(measured_heading),pan_heading)
+                self.previous['pan_heading'] = pan_heading
+            low,high = self.limits['shoulder_pan']
+            endpoint = ranges['pan_left_deg'] if pan_heading>=0 else ranges['pan_right_deg']
+            fraction = abs(math.degrees(pan_heading))/endpoint
+            pan = self.neutral['shoulder_pan']+fraction*((low if pan_heading>=0 else high)-self.neutral['shoulder_pan'])
+        else: pan = -heading
+        pan = self.clamp('shoulder_pan',pan)
         elevations = {}
         for role in ("hand",):
             direction = bones[role][0]
@@ -133,13 +153,34 @@ class Retargeter:
         bend = math.acos(max(-1.,min(1.,(radial*radial+height*height-a*a-b*b)/(2*a*b))))
         relative = self.bend_sign*bend
         upper = math.atan2(height,radial)-math.atan2(b*math.sin(relative),a+b*math.cos(relative))
-        upper = nearest_angle(upper,n["shoulder_lift"]-self.solution["shoulder_lift"])
+        upper = nearest_angle(upper,self.previous_upper)
+        self.previous_upper = upper
         fore = upper+relative
         hand = elevations["hand"]
-        shoulder = self.clamp("shoulder_lift",n["shoulder_lift"]-upper)
+        learned_shoulder = 'shoulder_max_deg' in ranges
+        learned_elbow = 'elbow_max_deg' in ranges
+        shoulder = n['shoulder_lift']-upper
+        if learned_shoulder:
+            # Keep pose A's forward reference. Each side of that reference
+            # independently reaches the robot's corresponding hard endpoint.
+            direction = bones['upper'][0]
+            elevation = math.degrees(math.atan2(direction[2],math.hypot(*direction[:2])))
+            low,high = self.limits['shoulder_lift']
+            endpoint = ranges['shoulder_max_deg'] if elevation>=0 else ranges.get('shoulder_min_deg',-90.)
+            fraction = max(0.,min(1.,elevation/endpoint))
+            shoulder = n['shoulder_lift']+fraction*((low if elevation>=0 else high)-n['shoulder_lift'])
+        shoulder = self.clamp('shoulder_lift',shoulder)
         actual_upper = n["shoulder_lift"]-shoulder
         elbow_delta = actual_upper-fore
-        elbow = self.clamp("elbow_flex",n["elbow_flex"]+elbow_delta)
+        elbow = n['elbow_flex']+elbow_delta
+        if learned_elbow:
+            # Bend uses the angle between calibrated limb directions, so a
+            # shoulder movement alone cannot consume the elbow's travel.
+            bend_degrees = math.degrees(math.acos(max(-1.,min(1.,dot(bones['upper'][0],bones['forearm'][0])))))
+            low,high = self.limits['elbow_flex']
+            fraction = max(0.,min(1.,bend_degrees/ranges['elbow_max_deg']))
+            elbow = low+fraction*(high-low)
+        elbow = self.clamp('elbow_flex',elbow)
         actual_fore = actual_upper+n["elbow_flex"]-elbow
         wrist_delta = actual_fore-hand
         wrist = self.clamp("wrist_flex",n["wrist_flex"]+wrist_delta)
@@ -153,9 +194,12 @@ class Retargeter:
         if dot(projected,projected) > .01:
             roll = nearest_angle(math.atan2(dot(forward,cross(up,projected)),dot(up,projected)),roll)
             self.previous["roll"] = roll
-        wrist_roll = self.clamp("wrist_roll",n["wrist_roll"]-roll)
+        wrist_roll = self.clamp("wrist_roll",n["wrist_roll"]-self.wrist_roll_gain*roll)
         self.solution = dict(shoulder_pan=pan,shoulder_lift=shoulder,elbow_flex=elbow,wrist_flex=wrist,wrist_roll=wrist_roll)
-        target = {name:self.clamp(name,2*n[name]-value) if reverse[name] else value
+        centers = {**n}
+        for name,learned in (('shoulder_lift',learned_shoulder),('elbow_flex',learned_elbow)):
+            if learned: centers[name] = sum(self.limits[name])/2
+        target = {name:self.clamp(name,2*centers[name]-value) if reverse[name] else value
                   for name,value in self.solution.items()}
         self.limited = list(dict.fromkeys(self.limited))
         return target

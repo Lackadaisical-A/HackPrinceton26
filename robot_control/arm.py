@@ -10,8 +10,7 @@ sys.path.insert(0, str(HERE/"vendor"))
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 
-JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
-BODY = JOINTS[:-1]
+from robot_control.joints import JOINTS, BODY  # noqa: E402  (re-exported)
 
 
 def choose_port(requested=None, excluded=("COM7", "COM8")):
@@ -51,6 +50,16 @@ class Arm:
 
     def connect(self):
         self.bus.connect()  # Ping/model/firmware checks; no motor configuration writes.
+
+    def slider_bus(self):
+        """ID-7 register view on the same open port, used only by the serial worker.
+
+        No second serial connection. This view uses single-register read/write;
+        its sync helpers and connect/disconnect must never be called.
+        """
+        view = FeetechMotorsBus(self.bus.port, {'slider': Motor(7,'sts3215',MotorNormMode.RANGE_0_100)})
+        view.port_handler = self.bus.port_handler
+        return view
 
     def close(self):
         if self.bus.is_connected:

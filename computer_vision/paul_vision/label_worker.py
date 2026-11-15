@@ -170,22 +170,24 @@ def run_job(job: dict) -> dict:
         model = _load_model(det, weights)
         timer.lap("load model")
     if op == "add":
-        name, spec = job["name"], job["view"]
-        view_id = lb.new_view_id()
-        if spec["kind"] == lb.KIND_VISUAL:
-            frame = np.load(spec["frame_npy"], allow_pickle=False)
-            box = [float(c) for c in spec["bbox"]]
-            emb = _visual_embedding(model, det, frame, box, threads)
-            timer.lap("embedding")
-            image = _save_reference(directory, view_id, frame)
-            view = lb.View(view_id, lb.KIND_VISUAL, time.time(), image=image, bbox=tuple(box))
-        else:
-            emb = _TextEncoder(model, det)(spec["prompt"])
-            timer.lap("embedding")
-            view = lb.View(view_id, lb.KIND_TEXT, time.time(), prompt=spec["prompt"])
-        new = lb.with_view(lib, name, view, max_tags=job["max_tags"], max_views=job["max_views"])
+        name = job["name"]
+        specs = job.get("views") or [job["view"]]  # `views`: several descriptions of one object in one change
         old = dict(zip([v.id for _, v in lib.views], lb.load_view_embeddings(directory, lib)))
-        old[view_id] = emb
+        new, text = lib, None
+        for spec in specs:
+            view_id = lb.new_view_id()
+            if spec["kind"] == lb.KIND_VISUAL:
+                frame = np.load(spec["frame_npy"], allow_pickle=False)
+                box = [float(c) for c in spec["bbox"]]
+                old[view_id] = _visual_embedding(model, det, frame, box, threads)
+                image = _save_reference(directory, view_id, frame)
+                view = lb.View(view_id, lb.KIND_VISUAL, time.time(), image=image, bbox=tuple(box))
+            else:
+                text = text or _TextEncoder(model, det)
+                old[view_id] = text(spec["prompt"])
+                view = lb.View(view_id, lb.KIND_TEXT, time.time(), prompt=spec["prompt"])
+            new = lb.with_view(new, name, view, max_tags=job["max_tags"], max_views=job["max_views"])
+        timer.lap("embedding")
         ids = [v.id for _, v in new.views]
         npz = lb.save_view_embeddings(directory, ids, np.stack([old[i] for i in ids]))
         new = dataclasses.replace(new, embeddings=npz, weights=Path(weights).name, imgsz=tuple(det.imgsz))

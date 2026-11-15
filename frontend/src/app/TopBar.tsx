@@ -10,13 +10,32 @@ import { cx } from '../ui/cx'
 import { IconKeyboard, IconMark, IconRecord, IconSpeaker, IconSpeakerOff, IconStop } from '../ui/icons'
 import { Readout } from '../ui/Readout'
 import { useIndicator } from '../ui/useIndicator'
-import { switchToSimulator, toggleRecording, toggleSpeak } from './runtime'
+import { usePolled } from '../routes/signals/usePolled'
+import { robotStopAvailable, stopRobot, switchToSimulator, toggleRecording, toggleSpeak } from './runtime'
 
 const SCREENS = [
   { to: '/', label: 'Console', end: true },
   { to: '/trials', label: 'Trials', end: false },
   { to: '/signals', label: 'Signals', end: false },
+  { to: '/setup', label: 'Setup', end: false },
 ]
+
+/** Shown whenever a wearable controller answers, on every screen: the same stop as Esc. */
+function StopButton() {
+  const [available] = usePolled(robotStopAvailable, 4)
+  if (!available) return null
+  return (
+    <Button
+      variant="window-alarm"
+      onClick={() => stopRobot('top bar')}
+      hint="Esc"
+      icon={<IconStop className="text-plate" />}
+      title="Pause the arm and claw (they hold position), cancel any capture and stop the coins."
+    >
+      STOP / hold
+    </Button>
+  )
+}
 
 /** Where the data is coming from. Simulated data is labelled here on every screen. */
 function SourceStatus() {
@@ -138,6 +157,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
         </nav>
 
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2 py-1.5">
+          <StopButton />
           <SourceStatus />
           <Button
             variant="window-quiet"

@@ -81,8 +81,10 @@ def backend_weights(cfg: Config, backend: str) -> str:
 
 
 def write_job(cfg: Config, op: str, *, backend: str, commit: bool, low_priority: bool, keep_export: str | None = None,
-              name: str | None = None, view: dict | None = None, frame: np.ndarray | None = None) -> Job:
-    """Write a job file for the label worker (and the picture for a visual view)."""
+              name: str | None = None, view: dict | None = None, frame: np.ndarray | None = None,
+              views: list[dict] | None = None) -> Job:
+    """Write a job file for the label worker (and the picture for a visual view). `views`: several text views for
+    `name` in one change, instead of `view`."""
     directory = lb.library_dir(cfg).resolve()
     jobs = directory / lb.JOBS_DIR
     jobs.mkdir(parents=True, exist_ok=True)
@@ -99,6 +101,8 @@ def write_job(cfg: Config, op: str, *, backend: str, commit: bool, low_priority:
         spec["name"] = name
     if view is not None:
         spec["view"] = dict(view)
+    if views is not None:
+        spec["views"] = [dict(v) for v in views]
     if frame is not None:
         np.save(job.frame, frame, allow_pickle=False)
         spec["view"]["frame_npy"] = str(job.frame)
@@ -287,6 +291,11 @@ class LabelManager:
     def busy(self) -> bool:
         return self._state != _IDLE
 
+    @property
+    def busy_name(self) -> str | None:
+        """The name being learned or forgotten right now, or None."""
+        return self._request.name if self.busy and self._request is not None else None
+
     # -- requests ----------------------------------------------------------------------------------------------
 
     def teach(self, req: LabelRequest) -> bool:
@@ -326,6 +335,20 @@ class LabelManager:
                          max_views=self._cfg.labels.max_views)
         except lb.LabelError as exc:
             return self._refuse(req, str(exc))
+        if req.kind == TAG_TEXT and req.prompts:
+            # Several descriptions of one object (../assist asks Gemini for them): one worker run, one new model.
+            tag = self.library.tag(name)
+            have = {v.prompt.lower() for v in tag.views if v.prompt} if tag is not None else set()
+            fresh: list[str] = []
+            for prompt in req.prompts:
+                if len(prompt) <= self._cfg.labels.max_prompt_chars and prompt.lower() not in have:
+                    have.add(prompt.lower())
+                    fresh.append(prompt)
+            fresh = fresh[:self._cfg.labels.max_views - (len(tag.views) if tag is not None else 0)]
+            if not fresh:
+                return self._refuse(req, f"Cannot {verb} {name}: there is no new description to add.")
+            return self._start(req, OP_ADD, f"Learning more about {name}.",
+                               views=[{"kind": lb.KIND_TEXT, "prompt": prompt} for prompt in fresh])
         if req.kind == TAG_TEXT:
             prompt = req.prompt or name
             if len(prompt) > self._cfg.labels.max_prompt_chars:
@@ -393,7 +416,7 @@ class LabelManager:
         return False
 
     def _start(self, req: LabelRequest, op: str, sentence: str, *, view: dict | None = None,
-               frame: np.ndarray | None = None) -> bool:
+               frame: np.ndarray | None = None, views: list[dict] | None = None) -> bool:
         if self._unsaved is not None and not self._save():
             # The worker starts from library.json and deletes the files it does not reference: from a library.json
             # without the unsaved change it would drop that change and its files.
@@ -405,7 +428,7 @@ class LabelManager:
         try:
             job = write_job(self._cfg, op, backend=self._backend, commit=False, low_priority=True,
                             keep_export=served_export_key(self._cfg, self._backend, self.library), name=req.name,
-                            view=view, frame=frame)
+                            view=view, frame=frame, views=views)
             proc = self._spawn(job, True)
         except Exception as exc:
             if job is not None:

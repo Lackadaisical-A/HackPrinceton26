@@ -47,6 +47,8 @@ class Board:
         self.motors = {i: {"percent": 0, "until": 0., "next": 0., "pending": None,
                            "running": False, "acks": 0} for i in (1, 2)}
         self.stop_pending = set()
+        self.fault_epoch = 0
+        self.stop_ack_until = {1: -math.inf, 2: -math.inf}
 
     def note(self, message):
         self.message = message
@@ -69,8 +71,24 @@ class Board:
 
     def stop(self, motor=None):
         for i in ((motor,) if motor else (1, 2)):
-            self.motors[i].update(percent=0, until=0., pending=None, running=False)
+            self.motors[i].update(percent=0, until=0., pending=None, running=False, feedback=False)
             self.stop_pending.add(i)
+
+    def fault(self, reason):
+        self.fault_epoch += 1
+        self.stop()
+        self.note(reason)
+
+    def feedback(self, motor, percent, now):
+        """Renew a short lease without resetting the outstanding hardware ACK."""
+        state = self.motors[motor]
+        if percent <= 0:
+            if state['percent'] or state['running']:
+                self.stop(motor)
+            return
+        if not state['percent']:
+            state.update(acks=0,pending=None,next=0.,running=False)
+        state.update(percent=percent, until=now+.2, feedback=True)
 
     def available(self, motor, now):
         key = "DRV2605L" if motor == 1 else "PWM2"
@@ -86,7 +104,7 @@ class Board:
             return
         if not self.available(motor, now):
             raise ValueError(f"{self.port}: motor {motor} is unavailable; check firmware/status and wiring")
-        self.motors[motor].update(percent=percent, until=now+seconds, next=0., acks=0)
+        self.motors[motor].update(percent=percent, until=now+seconds, next=0., acks=0, feedback=False)
         self.note(f"Motor {motor}: {percent:.0f}% for {seconds:g}s")
 
     def set_intensity(self, motor, percent):
@@ -103,16 +121,19 @@ class Board:
             if not motor["percent"]:
                 continue
             if not self.available(i, now):
-                self.stop()
-                self.note("Motor test stopped: device status missing or driver unavailable")
+                self.fault("Motor test stopped: device status missing or driver unavailable")
                 break
             if motor["pending"] is not None and now >= motor["pending"]:
-                self.stop()
-                self.note("Motor test stopped: acknowledgment timed out")
+                self.fault("Motor test stopped: acknowledgment timed out")
                 break
             if now >= motor["until"]:
+                if motor.get('feedback'):
+                    self.fault('Feedback stopped: refresh lease expired; enable again')
+                    break
                 self.stop(i)
         result = [f"STOP{i}" for i in sorted(self.stop_pending)]
+        for i in self.stop_pending:
+            self.stop_ack_until[i] = now+.3
         self.stop_pending.clear()
         for i, motor in self.motors.items():
             if motor["percent"] and motor["pending"] is None and now >= motor["next"]:
@@ -143,8 +164,7 @@ class Board:
             self.reset("Board startup detected; recalibrate the arm")
             return
         if line.startswith("# ERROR"):
-            self.stop()
-            self.note(line[2:])
+            self.fault(line[2:])
             return
         for i, prefix in ((1, "# HAPTIC"), (2, "# HAPTIC2")):
             if line.startswith(prefix+" ON "):
@@ -153,9 +173,11 @@ class Board:
                     self.motors[i]["acks"] += 1
                 return
             if line == prefix+" OFF":
+                if now <= self.stop_ack_until[i]:
+                    self.stop_ack_until[i] = -math.inf
+                    return  # An intentional STOP can be acknowledged after the next pulse starts.
                 if self.motors[i]["percent"] and now < self.motors[i]["until"]:
-                    self.stop()
-                    self.note("Motor test stopped: firmware pulse expired before renewal")
+                    self.fault("Motor test stopped: firmware pulse expired before renewal")
                 return
         if line.startswith("# JOYSTICK,") and self.name == "wroom":
             try:
@@ -182,8 +204,7 @@ class Board:
             q = normalize(tuple(map(float, parts)))
             sample = self.samples[sensor]
             if sample["q"] is not None and now-sample["seen"] > 1:
-                self.stop()
-                self.note("IMU stream resumed after a gap; motors stopped")
+                self.fault("IMU stream resumed after a gap; motors stopped")
             sample.update(q=q, seen=now, sequence=sample["sequence"]+1)
             sample["times"].append(now)
         except ValueError:
@@ -191,7 +212,7 @@ class Board:
 
     def snapshot(self):
         return deepcopy({"port": self.port, "connected": self.connected, "epoch": self.epoch,"reset_reason":self.reset_reason,
-            "fields": self.fields, "status_at": self.status_at, "message": self.message,
+            "fields": self.fields, "status_at": self.status_at, "message": self.message, "fault_epoch": self.fault_epoch,
             "log": list(self.log), "joystick": self.joystick, "samples": self.samples, "motors": self.motors})
 
 
@@ -205,6 +226,41 @@ class WearableHub:
         self.lock = threading.RLock()
         self.closed = threading.Event()
         self.threads = []
+        self.feedback_generation = 0
+        self.button_stops_feedback = True
+
+    def _feedback_token(self):
+        return (self.feedback_generation, *((b.epoch,b.fault_epoch) for b in self.boards.values()))
+
+    def begin_feedback(self):
+        with self.lock:
+            now = time.monotonic()
+            self._check_feedback(now)
+            self.stop()
+            return self._feedback_token()
+
+    def _check_feedback(self, now):
+        snapshot = {name:b.snapshot() for name,b in self.boards.items()}
+        fresh_frame(snapshot, now)
+        joystick = snapshot['wroom']['joystick']
+        if not joystick or not 0 <= now-joystick['seen'] < .3 or (joystick['pressed'] and self.button_stops_feedback):
+            raise ValueError('Release joystick switch; fresh joystick readings required')
+        for board in self.boards.values():
+            if not all(board.available(i,now) for i in (1,2)):
+                raise ValueError(f'{board.port}: both vibration outputs must be ready')
+
+    def feedback(self, levels, token):
+        """Atomic four-channel lease. Stop, board reset or ACK failure invalidates it."""
+        with self.lock:
+            now = time.monotonic()
+            if token != self._feedback_token():
+                raise ValueError('Feedback stopped/reset; enable again')
+            self._check_feedback(now)
+            if len(levels) != 4 or any(not math.isfinite(p) or not 0 <= p <= 65 for p in levels):
+                raise ValueError('Feedback intensity must be 0..65 percent')
+            # Wire order: palm left/right, forearm left/right.
+            for (board,motor),percent in zip((('wroom',1),('wroom',2),('s3',2),('s3',1)),levels):
+                self.boards[board].feedback(motor,percent,now)
 
     def start(self):
         for board in self.boards.values():
@@ -265,14 +321,18 @@ class WearableHub:
 
     def motor(self, board, motor, percent, seconds):
         with self.lock:
+            self.feedback_generation += 1
             self.boards[board].start(motor, percent, seconds, time.monotonic())
 
     def intensity(self, board, motor, percent):
         with self.lock:
+            if self.boards[board].motors[motor].get('feedback'):
+                return  # Slider prepares the next manual test; feedback owns current output.
             self.boards[board].set_intensity(motor, percent)
 
     def stop(self, board=None, motor=None):
         with self.lock:
+            self.feedback_generation += 1
             for name, state in self.boards.items():
                 if board is None or board == name:
                     state.stop(motor)
@@ -321,7 +381,11 @@ class DemoHub(WearableHub):
         angles = {"s3_imu1": .25+.2*math.sin(t), "s3_imu2": -.6+.5*math.sin(t), "wroom": -.5+.6*math.sin(t)}
         frame = {}
         for key,mount in self.mounts.items():
-            rotation = axis_q(1,0 if pose == "A" else math.pi/2 if pose == "B" else angles[key])
+            angle = (0 if pose=='A' else math.pi/2 if pose=='B' else
+                     (0 if key=='s3_imu1' else -math.radians(125)) if pose=='C' else
+                     -math.radians(80) if pose=='D' else angles[key])
+            rotation = axis_q(1,angle)
+            if pose in ('E','F'): rotation = axis_q(2,math.radians(40 if pose=='E' else -30))
             if pose is None:
                 rotation = multiply(axis_q(2,.6*math.sin(t*.6)),rotation)
                 if key == "wroom": rotation = multiply(rotation,axis_q(0,.4*math.sin(t*.9)))

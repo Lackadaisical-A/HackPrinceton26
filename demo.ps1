@@ -1,5 +1,7 @@
 param(
-    [ValidateSet('pots', 'leslider')][string]$Controller = 'leslider',
+    [ValidateSet('pots', 'leslider', 'imu')][string]$Controller = 'leslider',
+    [string]$WroomPort = 'COM7',
+    [string]$S3Port = 'COM8',
     [string]$LeaderPort = 'COM9',
     [string]$RobotPort = 'COM6',
     [string]$CameraSource = 'wrist',
@@ -16,6 +18,7 @@ try {
     $demoArgs = @('demo', '--controller', $Controller, '--leader-port', $LeaderPort,
                   '--robot-port', $RobotPort, '--source', $CameraSource)
     if ($VisionConfig) { $demoArgs += @('--vision-config', $VisionConfig) }
+    if ($Controller -eq 'imu') { $demoArgs += @('--wroom-port', $WroomPort, '--s3-port', $S3Port) }
     if ($DryRun) { $demoArgs += '--dry-run' }
     if ($Check) { $demoArgs += '--check' }
     if ($ServicesOnly) { $demoArgs += '--services-only' }

@@ -11,6 +11,7 @@ const KIND_WORD: Record<EventKind, string> = {
   record: 'Recording',
   link: 'Link',
   command: 'Command',
+  assist: 'Assist',
 }
 
 /** The store keeps more; this many is plenty to scroll back through during a run. */

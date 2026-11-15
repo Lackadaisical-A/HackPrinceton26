@@ -1,15 +1,17 @@
 import { AIM_DEFAULT } from '../config'
 import { clampAim, describeAim, sameAim } from '../lib/aim'
+import { targetNames } from '../lib/targets'
 import { fileStamp, downloadText } from '../lib/format'
 import { useSession } from '../state/session'
 import { useSettings } from '../state/settings'
 import { newTrialId, useTrials } from '../state/trials'
 import { bus } from '../telemetry/bus'
-import type { Command } from '../telemetry/contracts'
+import type { AssistItem, Command } from '../telemetry/contracts'
 import { MAX_LINES, Recorder } from '../telemetry/recorder'
 import { Simulator } from '../telemetry/sources/simulator'
 import type { Source } from '../telemetry/sources/types'
 import { WebSocketSource } from '../telemetry/sources/websocket'
+import { newRequestId } from '../lib/requestId'
 import { getTrialPeak, holdHapticsSetting, resetTrialPeak } from './derive'
 
 /**
@@ -93,6 +95,25 @@ export function sendCommand(command: Command): boolean {
   return sent
 }
 
+/**
+ * STOP / hold: pauses the arm and claw (torque stays on, holding position), cancels any capture and
+ * stops the coins, exactly like Esc in Wearable Lab. The controller honours it without a matching
+ * session or revision, so it works even when this console's status is stale.
+ */
+export function stopRobot(origin: string): boolean {
+  const latest = bus.latest('calibration')
+  const sent = sendCommand({
+    type: 'control_robot', action: 'stop', request_id: newRequestId(),
+    session: latest?.session ?? '', revision: latest?.revision ?? 0,
+  })
+  useSession.getState().log('command', `STOP / hold (${origin}): ${sent ? 'sent' : 'not sent, no connection'}`, sent ? 'caution' : 'warning')
+  return sent
+}
+
+/** Whether a wearable controller is answering, so STOP / hold has something to stop. */
+export const robotStopAvailable = (): boolean =>
+  useSession.getState().link.state === 'open' && bus.latest('calibration') !== null
+
 // --- Haptics and target -----------------------------------------------------------------------
 
 export function setHaptics(enabled: boolean): void {
@@ -147,6 +168,62 @@ export function sendLabelCommand(command: LabelCommand): boolean {
   else if (session.link.state === 'simulated') session.log('command', `${what}: the simulator cannot learn names`, 'caution')
   else session.log('command', `${what}: not sent, no connection`, 'caution')
   return sent
+}
+
+// --- Assist (Gemini) ---------------------------------------------------------------------------
+
+/** How long vision may take to learn a new name before the find is given up (live runs took 30 to 49 s). */
+const ASSIST_TEACH_TIMEOUT_MS = 120_000
+let stopFindWatch: (() => void) | null = null
+
+/** Asks the assist process to analyse the current camera picture. Its answer arrives on the `assist` topic. */
+export function requestAssist(): boolean {
+  const session = useSession.getState()
+  const sent = sendCommand({ type: 'assist_request' })
+  if (!sent) session.log('assist', 'Analysis not requested: no connection', 'caution')
+  return sent
+}
+
+/**
+ * Points vision at an item the assistant named. A name vision knows is selected at once. A new one is taught
+ * from Gemini's description first (tag_text), and selected when vision says "<name> is ready."
+ * Only the target changes: the operator still drives the arm.
+ */
+export function findAssistItem(item: AssistItem): void {
+  const session = useSession.getState()
+  stopFindWatch?.()
+  const known = item.known || targetNames(session.labels).includes(item.name)
+  if (known) {
+    selectTarget(item.name)
+    session.setAssistFind({ name: item.name, state: 'selected', detail: `Vision is looking for ${item.name}.` })
+    return
+  }
+  if (!sendLabelCommand({ type: 'tag_text', name: item.name, prompt: item.prompt })) {
+    session.setAssistFind({ name: item.name, state: 'failed', detail: 'Not sent: no connection to vision.' })
+    return
+  }
+  session.setAssistFind({ name: item.name, state: 'teaching', detail: `Teaching vision “${item.name}”. This takes about 30 to 50 s.` })
+  const name = item.name.toLowerCase()
+  const finish = (state: 'selected' | 'failed', detail: string) => {
+    stopFindWatch?.()
+    useSession.getState().setAssistFind({ name: item.name, state, detail })
+  }
+  const off = bus.on('vision', (message) => {
+    const said = message.summary?.toLowerCase()
+    if (!said || !said.includes(name)) return
+    if (said.includes(`${name} is ready`)) {
+      selectTarget(item.name)
+      finish('selected', `Vision learned ${item.name} and is looking for it.`)
+    } else if (said.startsWith('cannot learn') || said.startsWith('could not learn')) {
+      finish('failed', message.summary ?? 'Vision could not learn it.')
+    }
+  })
+  const timer = setTimeout(() => finish('failed', `Vision did not finish learning ${item.name} in time.`), ASSIST_TEACH_TIMEOUT_MS)
+  stopFindWatch = () => {
+    off()
+    clearTimeout(timer)
+    stopFindWatch = null
+  }
 }
 
 // --- Crosshair (aim point) ---------------------------------------------------------------------

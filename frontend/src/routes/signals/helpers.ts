@@ -7,10 +7,15 @@ const NBSP = ' '
 
 export const TOPIC_LABELS: Record<Topic, string> = {
   vision: 'Vision',
+  labels: 'Targets',
   pressure: 'Pressure',
   imu: 'IMU',
   robot: 'Robot',
   haptics: 'Haptics',
+  calibration: 'Calibration',
+  assist: 'Assist',
+  task: 'Smart task',
+  agent: 'Smart action',
 }
 
 /** Returns what is wrong with a bridge address and how to fix it, or null when it is usable. */

@@ -74,6 +74,7 @@ class LabelsConfig:
     worker_timeout_s: float
     worker_threads: int
     load_timeout_s: float
+    publish_s: float
 
 
 @dataclass(frozen=True)
@@ -115,9 +116,9 @@ class SelectionConfig:
     conf_lock: float
     conf_keep: float
     center_weight: float
-    switch_margin: float
-    switch_dwell_s: float
     coast_s: float
+    reacquire_s: float
+    reacquire_dist: float
     preferred_label: str | None
 
 
@@ -471,6 +472,7 @@ def validate_labels_config(lb: LabelsConfig) -> None:
     require(lb.worker_timeout_s > 0, "labels.worker_timeout_s must be above 0")
     require(lb.worker_threads >= 1, "labels.worker_threads must be at least 1")
     require(lb.load_timeout_s > 0, "labels.load_timeout_s must be above 0")
+    require(lb.publish_s > 0, "labels.publish_s must be above 0")
 
 
 def validate(cfg: Config) -> None:
@@ -526,6 +528,9 @@ def validate(cfg: Config) -> None:
     require(cfg.tracker.label_memory_s >= 0 and cfg.tracker.label_margin >= 0,
             "tracker.label_memory_s and tracker.label_margin must not be negative")
     require(0 <= cfg.selection.center_weight <= 1, "selection.center_weight must be in [0, 1]")
+    require(cfg.selection.coast_s >= 0 and cfg.selection.reacquire_s >= 0,
+            "selection.coast_s and selection.reacquire_s must be 0 or more")
+    require(0 < cfg.selection.reacquire_dist <= 1, "selection.reacquire_dist must be in (0, 1]")
     require(0 < cfg.summary.center_band <= cfg.summary.slight_band,
             "need 0 < summary.center_band <= summary.slight_band")
     require(0 <= cfg.summary.band_hysteresis < 1, "summary.band_hysteresis must be in [0, 1)")

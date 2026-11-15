@@ -178,3 +178,13 @@ These are module constants, not keys in `config.yaml`; the team may want some of
 - **The class list** `[cup, bottle, pill bottle, box]`. It is a guess until the demo objects are known. On the sample clips "pill bottle" almost never wins and "box" does not match small blocks or trays.
 - **Thresholds on our own footage.** They were set on public clips from other cameras. The one recording of ours, `recordings/run1.mp4`, never brought an object closer than "far", so `distance.thresholds` and the behaviour at grasp range are untested on our camera. `selection.coast_s` and `selection.conf_keep` are open; the numbers are in `README.md` under "What the sample clips showed".
 - **Real consumers.** The `vision` stream has been read by `subscribe_print`, the tests and the web console (through the bridge, also as the launcher starts it). No run with the haptics or the team's speech output is recorded in this folder. On the command side, vision has taken commands from `send_command`, the web console through the bridge (a box drawn on its camera view included), and the voice process fed typed lines.
+
+## One target at a time, the `labels` topic, Gemini's extra views: built, run in tests only
+
+Built on 15 November 2026 (`README.md`: "One target at a time", "The `labels` topic", "More views from Gemini"). Not checked:
+
+- **The lock on a live camera.** The selector's new rules (no rival takes over; a lost target is waited for `selection.reacquire_s` within `selection.reacquire_dist`) have run in `tests/test_selection.py` and `tests/test_pipeline_e2e.py` only. `reacquire_s` (1.5) and `reacquire_dist` (0.2) are guesses: the wait compares places in the picture, so a moving wrist camera may need a wider distance or a shorter wait. `scripts/eval_clips.py` was not rerun on the sample clips with them.
+- **A wrong lock stays.** Vision no longer corrects itself when it locked the wrong object while the right one is in view; the operator has to choose the target again.
+- **Gemini's descriptions end to end.** `../assist` sending `tag_text` with `prompts` to a running vision, vision adding the views, and the console showing the new view count have not run together. One real Gemini call gave usable descriptions; whether text views make YOLOE find a taught object from other sides or in other light is not measured (text tags as such were only checked in unit tests, see M4).
+- **More views, slower detector.** A name now gets up to 3 more views, each one more class in the model. The frame rate with several enriched names was not measured.
+- **The console's Target panel in a browser.** It replaced the Task panel and reads the `labels` topic; it has passed the frontend's type check and tests, and was not opened in a browser.

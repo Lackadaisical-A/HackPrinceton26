@@ -11,3 +11,6 @@ __pycache__/
 /wearable_test/calibration.local.json
 /wearable_test/calibration.local.tmp
 /wearable_test/runtime.log*
+
+# API keys (GEMINI_API_KEY for assist/)
+.env

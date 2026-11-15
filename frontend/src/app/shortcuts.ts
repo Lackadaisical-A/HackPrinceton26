@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { useSession } from '../state/session'
-import { finishTrial, markDeformation, markDrop, startTrial, toggleHaptics, toggleRecording, toggleSpeak } from './runtime'
+import { finishTrial, markDeformation, markDrop, robotStopAvailable, startTrial, stopRobot, toggleHaptics, toggleRecording, toggleSpeak } from './runtime'
 
 /** Shown in the shortcuts dialog. The handler below is the source of what each key does. */
 export const SHORTCUTS: { keys: string; does: string }[] = [
+  { keys: 'Esc', does: 'STOP / hold the robot arm and claw, and stop the coins (works everywhere, even while typing)' },
   { keys: 'T', does: 'Start a trial, or finish the one that is running' },
   { keys: 'D', does: 'Mark a drop during a trial' },
   { keys: 'F', does: 'Mark a deformation during a trial' },
@@ -14,6 +15,7 @@ export const SHORTCUTS: { keys: string; does: string }[] = [
   { keys: '1', does: 'Go to Console' },
   { keys: '2', does: 'Go to Trials' },
   { keys: '3', does: 'Go to Signals' },
+  { keys: '4', does: 'Go to Setup' },
   { keys: '?', does: 'Show this list' },
 ]
 
@@ -25,6 +27,17 @@ function isTyping(target: EventTarget | null): boolean {
 /** Single-key shortcuts for the whole app. Ignored while typing or when a dialog is open. */
 export function useShortcuts(openHelp: () => void): void {
   const navigate = useNavigate()
+
+  // Esc is the robot's stop key, as in Wearable Lab. It listens in the capture phase, ahead of every
+  // other guard, and never prevents default, so dialogs and drawing tools still get their own Esc.
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.repeat || !robotStopAvailable()) return
+      stopRobot('Esc')
+    }
+    window.addEventListener('keydown', onEscape, { capture: true })
+    return () => window.removeEventListener('keydown', onEscape, { capture: true })
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -60,6 +73,9 @@ export function useShortcuts(openHelp: () => void): void {
           break
         case '3':
           void navigate('/signals')
+          break
+        case '4':
+          void navigate('/setup')
           break
         case '?':
           openHelp()

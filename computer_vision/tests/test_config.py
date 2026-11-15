@@ -21,7 +21,7 @@ def test_shipped_config_loads(shipped_cfg):
 
 def test_shipped_command_senders_each_have_their_own_endpoint(shipped_cfg):
     # The console bridge, voice and send_command each bind one; send_command's default is the last.
-    assert shipped_cfg.transport.command_sub == ["tcp://127.0.0.1:5557", "tcp://127.0.0.1:5559",
+    assert shipped_cfg.transport.command_sub == ["tcp://127.0.0.1:5557", "tcp://127.0.0.1:5559", "tcp://127.0.0.1:5564",
                                                  "tcp://127.0.0.1:5560"]
 
 

@@ -333,7 +333,7 @@ def test_local_pages_pattern_matches_whole_origins_only():
 def test_the_defaults_match_the_rest_of_the_system():
     relay = Relay()
     assert (relay.host, relay.port, relay.url) == ("127.0.0.1", 8765, "ws://127.0.0.1:8765")
-    assert relay.sources == ["tcp://127.0.0.1:5555", "tcp://127.0.0.1:5556", "tcp://127.0.0.1:5558"]
+    assert relay.sources == ["tcp://127.0.0.1:5555", "tcp://127.0.0.1:5556", "tcp://127.0.0.1:5558", "tcp://127.0.0.1:5561", "tcp://127.0.0.1:5562", "tcp://127.0.0.1:5563"]
     assert relay.command_endpoint == "tcp://127.0.0.1:5557" == DEFAULT_COMMANDS
     assert all(endpoint.startswith("tcp://127.0.0.1:") for endpoint in DEFAULT_SOURCES)
 

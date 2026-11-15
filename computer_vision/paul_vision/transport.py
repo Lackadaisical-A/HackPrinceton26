@@ -10,7 +10,7 @@ import zmq
 
 from . import clock
 from .config import WatchdogConfig
-from .messages import TOPIC_VISION, build_vision_message, decode, encode
+from .messages import TOPIC_LABELS, TOPIC_VISION, build_vision_message, decode, encode
 from .phase import PHASE_SEARCH
 from .summary import TEXT_DEGRADED
 from .types import STATUS_DEGRADED
@@ -96,6 +96,11 @@ class VisionPublisher:
                 except queue.Empty:
                     pass
 
+    def publish_labels(self, message: dict) -> None:
+        """Queue a `labels` message (messages.build_labels_message) for the same socket. It is not a sign of a live
+        feed: the watchdog only counts vision messages."""
+        self.publish((TOPIC_LABELS, message))
+
     def close(self) -> None:
         if self._thread.is_alive():
             self._queue.put(_STOP)
@@ -136,6 +141,9 @@ class VisionPublisher:
                     message = None
                 if message is _STOP:
                     break
+                if isinstance(message, tuple):  # (topic, payload): another topic on this socket
+                    sock.send(encode(*message))
+                    continue
                 now = clock.now()
                 if message is not None:
                     sock.send(encode(TOPIC_VISION, message))

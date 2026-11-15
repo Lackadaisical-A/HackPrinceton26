@@ -1,5 +1,13 @@
 # PAUL
 
+**Integrated IMU console:** run `.\demo.ps1 -Controller imu` for the COM7/COM8
+wearables, COM6 SO-101, camera vision and live web console. Calibrate and start
+the arm from the browser's **Setup** page (key 4) or Wearable Lab's desktop
+windows, which stay in step: recenter in pose A, then **Align & follow**; the
+claw enables separately. **Esc** or **STOP / hold** stops it from any screen.
+See [WEARABLE.md](robot_control/WEARABLE.md). Physical feedback and hand orientation
+are published at 10 Hz without additional servo reads.
+
 **Integrated potentiometer test:** run `.\demo.ps1 -DryRun`, then `.\demo.ps1`
 for hardware control with the robot camera and web console. Defaults match
 COM9 → COM6 seven-axis control; use `-Controller pots` for six channels only.

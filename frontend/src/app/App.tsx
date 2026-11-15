@@ -5,7 +5,7 @@ import { Shell } from './Shell'
 
 /**
  * Hash routing, so the built app works from any static host or a file share with no server
- * rewrite rules. The console loads with the app; the other two screens load when first opened.
+ * rewrite rules. The console loads with the app; the other screens load when first opened.
  */
 const router = createHashRouter([
   {
@@ -22,6 +22,10 @@ const router = createHashRouter([
       {
         path: 'signals',
         lazy: async () => ({ Component: (await import('../routes/signals/SignalsPage')).default }),
+      },
+      {
+        path: 'setup',
+        lazy: async () => ({ Component: (await import('../routes/setup/SetupPage')).default }),
       },
       { path: '*', Component: NotFound },
     ],

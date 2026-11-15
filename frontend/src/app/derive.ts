@@ -1,4 +1,5 @@
 import { JOINTS, LIMITS } from '../config'
+import { assistSpeech } from '../lib/assistSpeech'
 import { sentenceCase } from '../lib/format'
 import { useSession } from '../state/session'
 import { useSettings } from '../state/settings'
@@ -65,6 +66,13 @@ export function startDerive(): () => void {
     }
   })
 
+  const offLabels = bus.on('labels', (message) => {
+    const store = session.getState()
+    const next = { classes: message.classes, tags: message.tags, busy: message.busy }
+    // Repeated every 2 s: only a change is worth a render.
+    if (JSON.stringify(next) !== JSON.stringify(store.labels)) store.setLabels(next)
+  })
+
   const offPressure = bus.on('pressure', (message) => {
     let hi = 0
     for (const v of message.norm) if (v > hi) hi = v
@@ -77,6 +85,21 @@ export function startDerive(): () => void {
     for (let i = 0; i < message.load.length; i++) {
       if (Math.abs(message.load[i]) >= LIMITS.loadCaution) loadHighJoint = i
     }
+  })
+
+  const offAssist = bus.on('assist', (message) => {
+    const store = session.getState()
+    const previous = store.assist
+    if (previous && previous.seq === message.seq && previous.t === message.t) return // the 5 s repeat
+    store.setAssist(message)
+    if (previous && previous.seq === message.seq) return // the process restarted; nothing new to announce
+    if (message.status === 'error' && message.detail) store.log('assist', message.detail, 'caution')
+    if (message.status !== 'ok' || !message.result) return
+    const { result } = message
+    store.log('assist', result.scene, result.patient.urgency === 'urgent' ? 'warning' : undefined)
+    for (const check of result.touch_checks ?? []) store.log('assist', `Touch check: ${check.text}`)
+    const line = assistSpeech(result)
+    if (line) speak(line)
   })
 
   const offHaptics = bus.on('haptics', (message, receivedMs) => {
@@ -99,7 +122,17 @@ export function startDerive(): () => void {
     if (flowing && visionHz > 0 && visionHz < LIMITS.fpsCaution) slowSinceMs ??= now
     else slowSinceMs = null
 
+    const assist = store.assist
+    const urgency = assist?.status === 'ok' ? assist.result?.patient.urgency : undefined
     const conditions: Condition[] = [
+      {
+        key: 'patient-urgent',
+        level: 'warning',
+        where: 'camera',
+        text: 'Assist: patient may need help now',
+        on: urgency === 'urgent',
+        latch: false,
+      },
       {
         key: 'object-dropped',
         level: 'warning',
@@ -169,9 +202,11 @@ export function startDerive(): () => void {
 
   return () => {
     offVision()
+    offLabels()
     offPressure()
     offRobot()
     offHaptics()
+    offAssist()
     clearInterval(timer)
     tracker.clear()
     slowSinceMs = null

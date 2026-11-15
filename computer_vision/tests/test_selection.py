@@ -7,8 +7,8 @@ from paul_vision.config import SelectionConfig
 from paul_vision.selection import TargetSelector
 from paul_vision.types import Track
 
-CFG = SelectionConfig(conf_lock=0.40, conf_keep=0.25, center_weight=1.0, switch_margin=0.25,
-                      switch_dwell_s=0.5, coast_s=0.15, preferred_label=None)
+CFG = SelectionConfig(conf_lock=0.40, conf_keep=0.25, center_weight=1.0, coast_s=0.15, reacquire_s=1.5,
+                      reacquire_dist=0.2, preferred_label=None)
 
 
 def test_no_tracks_is_no_target():
@@ -49,13 +49,13 @@ def test_picks_the_object_nearest_the_aim_point():
     assert selector.update(tracks, t=0.0).target.track_id == 2
 
 
-def test_moving_the_aim_keeps_the_locked_target_until_a_rival_wins():
+def test_moving_the_aim_keeps_the_locked_target():
     selector = TargetSelector(CFG)
     tracks = [track(1, cx=0.5, cy=0.5), track(2, cx=0.8, cy=0.8)]
     assert selector.update(tracks, t=0.0).target.track_id == 1
     selector.set_aim(0.8, 0.8)
-    assert selector.update(tracks, t=0.1).target.track_id == 1                # the switch dwell still applies
-    assert selector.update(tracks, t=0.1 + CFG.switch_dwell_s).target.track_id == 2
+    for i in range(1, 90):  # three seconds with the other object right on the crosshair
+        assert selector.update(tracks, t=i / 30).target.track_id == 1
 
 
 def test_center_weight_zero_means_confidence_only():
@@ -87,44 +87,82 @@ def test_confidence_below_conf_keep_counts_as_lost():
     assert selector.update([track(conf=0.20)], t=0.30).status == "low_confidence"  # dropped
 
 
-def test_reacquiring_after_a_drop_reports_changed():
+def test_a_new_target_after_the_wait_reports_changed():
     selector = TargetSelector(CFG)
     selector.update([track()], t=0.0)
     selector.update([], t=1.0)
-    sel = selector.update([track()], t=1.03)
-    assert (sel.status, sel.target.track_id, sel.changed) == ("ok", 1, True)
+    sel = selector.update([track(2, cx=0.9)], t=CFG.reacquire_s + 0.1)
+    assert (sel.status, sel.target.track_id, sel.changed) == ("ok", 2, True)
 
 
-def test_a_slightly_better_rival_never_takes_over():
-    selector = TargetSelector(CFG)
-    selector.update([track(1, conf=0.60)], t=0.0)
-    for i in range(1, 60):  # two seconds of a rival that is only 10% better
-        sel = selector.update([track(1, conf=0.60), track(2, conf=0.66)], t=i / 30)
-        assert sel.target.track_id == 1
-
-
-def test_a_clearly_better_rival_takes_over_after_the_dwell_time():
+def test_a_better_rival_never_takes_over_while_the_target_is_seen():
     selector = TargetSelector(CFG)
     selector.update([track(1, conf=0.50, cx=0.8)], t=0.0)
-    scene = [track(1, conf=0.50, cx=0.8), track(2, conf=0.90, cx=0.5)]
-    early = selector.update(scene, t=0.1)   # rival first seen
-    still = selector.update(scene, t=0.5)   # 0.4 s of dwell, not enough
-    switched = selector.update(scene, t=0.65)
-    after = selector.update(scene, t=0.70)
-    assert (early.target.track_id, still.target.track_id) == (1, 1)
-    assert (switched.target.track_id, switched.changed) == (2, True)
-    assert (after.target.track_id, after.changed) == (2, False)
+    scene = [track(1, conf=0.50, cx=0.8), track(2, conf=0.95, cx=0.5)]  # far better, and dead centre
+    for i in range(1, 150):  # five seconds
+        sel = selector.update(scene, t=i / 30)
+        assert (sel.target.track_id, sel.changed) == (1, False)
 
 
-def test_rival_dwell_restarts_if_the_rival_goes_away():
+def test_the_same_object_under_a_new_track_id_continues_the_lock():
     selector = TargetSelector(CFG)
-    current, rival = track(1, conf=0.50, cx=0.8), track(2, conf=0.90, cx=0.5)
-    selector.update([current], t=0.0)
-    selector.update([current, rival], t=0.1)
-    selector.update([current], t=0.4)          # rival vanishes: the dwell clock restarts
-    selector.update([current, rival], t=0.5)
-    assert selector.update([current, rival], t=0.9).target.track_id == 1
-    assert selector.update([current, rival], t=1.05).target.track_id == 2
+    selector.update([track(1, cx=0.6)], t=0.0)
+    selector.update([], t=0.3)  # past coast_s: nothing published
+    sel = selector.update([track(7, cx=0.65)], t=0.5)  # the tracker gave it a new id, near where it was
+    assert (sel.status, sel.target.track_id, sel.fresh, sel.changed) == ("ok", 7, True, False)
+    assert selector.update([track(7, cx=0.65), track(8, conf=0.95)], t=0.53).target.track_id == 7
+
+
+def test_another_object_is_not_locked_while_waiting_for_the_target():
+    selector = TargetSelector(CFG)
+    selector.update([track(1, cx=0.2, cy=0.2)], t=0.0)
+    other = track(2, conf=0.95, cx=0.8, cy=0.8)  # confident, but far from where the target was
+    waiting = selector.update([other], t=0.5)
+    assert (waiting.status, waiting.target) == ("low_confidence", None)
+    assert selector.update([], t=0.6).status == "no_target"
+    back = selector.update([other, track(3, cx=0.25, cy=0.2)], t=1.0)
+    assert (back.target.track_id, back.changed) == (3, False)
+
+
+def test_after_the_wait_the_best_object_is_locked():
+    selector = TargetSelector(CFG)
+    selector.update([track(1, cx=0.2, cy=0.2)], t=0.0)
+    other = track(2, conf=0.95, cx=0.8, cy=0.8)
+    assert selector.update([other], t=CFG.reacquire_s).status == "low_confidence"
+    sel = selector.update([other], t=CFG.reacquire_s + 0.03)
+    assert (sel.target.track_id, sel.changed) == (2, True)
+
+
+def test_coming_back_prefers_the_candidate_with_the_targets_label():
+    selector = TargetSelector(CFG)
+    selector.update([track(1, "cup", cx=0.5)], t=0.0)
+    sel = selector.update([track(4, "box", cx=0.5), track(5, "cup", cx=0.6)], t=0.5)
+    assert sel.target.track_id == 5
+
+
+def test_no_wait_when_reacquire_is_off():
+    selector = TargetSelector(dataclasses.replace(CFG, reacquire_s=0.0))
+    selector.update([track(1, cx=0.2, cy=0.2)], t=0.0)
+    sel = selector.update([track(2, cx=0.8, cy=0.8)], t=0.3)
+    assert (sel.target.track_id, sel.changed) == (2, True)
+
+
+def test_release_picks_the_best_object_afresh():
+    selector = TargetSelector(CFG)
+    scene = [track(1, conf=0.50, cx=0.8), track(2, conf=0.95, cx=0.5)]
+    selector.update([scene[0]], t=0.0)
+    assert selector.update(scene, t=0.03).target.track_id == 1
+    selector.release()
+    sel = selector.update(scene, t=0.06)
+    assert (sel.target.track_id, sel.changed) == (2, True)
+
+
+def test_the_locked_track_is_kept_when_its_label_changes():
+    # The tracker's label is a vote: the same object seen from another side can be renamed.
+    selector = TargetSelector(dataclasses.replace(CFG, preferred_label="box"))
+    selector.update([track(2, "box")], t=0.0)
+    sel = selector.update([track(2, "cup"), track(3, "box", conf=0.95, cx=0.8)], t=0.03)
+    assert (sel.status, sel.target.track_id, sel.target.label, sel.changed) == ("ok", 2, "cup", False)
 
 
 def test_preferred_label_restricts_the_choice():

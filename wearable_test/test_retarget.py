@@ -67,6 +67,36 @@ class RetargetTests(unittest.TestCase):
             pans.append(target["shoulder_pan"])
         self.assertVector(pans,(.6,0,-.6))
 
+    def test_pan_calibration_spans_full_travel_and_preserves_center_and_flexion(self):
+        low,high = self.retarget.limits['shoulder_pan']
+        for heading,expected in ((-30,high),(-15,high/2),(0,0),(20,low/2),(40,low),(60,low)):
+            g = geometry(.2,.6,.4,math.radians(heading),.1)
+            normal = self.target(g)
+            target = self.target({**g,'reach_heading_deg':heading,'motion_ranges':{'pan_left_deg':40,'pan_right_deg':30}})
+            self.assertAlmostEqual(target['shoulder_pan'],expected)
+            for name in target:
+                if name!='shoulder_pan': self.assertAlmostEqual(target[name],normal[name],msg=name)
+
+    def test_pan_requires_both_sides_holds_vertical_and_unwraps_at_pi(self):
+        g = geometry(heading=math.radians(20))
+        self.assertAlmostEqual(self.target({**g,'motion_ranges':{'pan_left_deg':40}})['shoulder_pan'],-math.radians(20))
+        ranges = {'pan_left_deg':40,'pan_right_deg':30}
+        before = self.target({**g,'reach_heading_deg':20,'motion_ranges':ranges})['shoulder_pan']
+        vertical = self.target({**geometry(math.pi/2,math.pi/2,math.pi/2),'reach_heading_deg':None,'motion_ranges':ranges})
+        self.assertAlmostEqual(vertical['shoulder_pan'],before)
+        before = self.target({**g,'reach_heading_deg':179,'motion_ranges':ranges})['shoulder_pan']
+        after = self.target({**g,'reach_heading_deg':-179,'motion_ranges':ranges})['shoulder_pan']
+        self.assertEqual(before,after)
+
+    def test_pan_reverse_is_independent_and_hits_opposite_endpoint(self):
+        g = {**geometry(heading=math.radians(40)),'motion_ranges':{'pan_left_deg':40,'pan_right_deg':30}}
+        normal = self.target(g)
+        self.mapping.reverse['shoulder_pan'] = True
+        reversed_target = self.target(g)
+        self.assertAlmostEqual(reversed_target['shoulder_pan'],self.mapping.limits['shoulder_pan'][1])
+        for name in normal:
+            if name!='shoulder_pan': self.assertAlmostEqual(reversed_target[name],normal[name])
+
     def test_elbow_ik_tracks_wrist_reach_with_reachable_bend_branch(self):
         for upper,fore in ((0,.5),(0,1.),(-.8,0),(.6,1.3),(.8,-.2)):
             g = geometry(upper,fore,fore,heading=.4)
@@ -75,11 +105,12 @@ class RetargetTests(unittest.TestCase):
                            scale(g["bases"]["forearm"][0],self.retarget.forearm_length))
             self.assertVector(self.wrist_reach(target),expected)
 
-    def test_roll_matches_hand_palm_orientation(self):
+    def test_roll_amplifies_hand_palm_orientation_twofold(self):
         for roll in (-1.,0,1.):
             g = geometry(.2,.6,.5,heading=.4,roll=roll)
             target = self.target(g)
-            self.assertVector(self.kinematics.directions(target)["palm_up"],g["bases"]["hand"][2])
+            doubled = geometry(.2,.6,.5,heading=.4,roll=2*roll)
+            self.assertVector(self.kinematics.directions(target)["palm_up"],doubled["bases"]["hand"][2])
 
     def test_reverse_is_independent_per_joint(self):
         g = geometry(.3,.5,.5,heading=.6)

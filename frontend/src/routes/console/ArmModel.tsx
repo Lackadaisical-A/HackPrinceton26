@@ -9,12 +9,15 @@ import type { URDFRobot } from 'urdf-loader'
 import { LIMITS } from '../../config'
 import { schedule } from '../../render/scheduler'
 import { theme } from '../../render/theme'
+import { ghostPose, samePose } from '../../robot/ghost'
 import { easeGlow, glowLook, glowTarget } from '../../robot/loadGlow'
 import { disposeModel, HOME_POSE, loadSO101, MODEL_JOINTS, setRobotPose } from '../../robot/so101'
 import { useSettings } from '../../state/settings'
 import { bus } from '../../telemetry/bus'
 import type { RobotMessage } from '../../telemetry/contracts'
 import { Button } from '../../ui/Button'
+import { Switch } from '../../ui/Switch'
+import { CALIBRATION_FRESH_MS } from './calibration'
 
 type ViewState = 'loading' | 'ready' | 'error'
 
@@ -54,13 +57,23 @@ function haloTexture(): CanvasTexture {
   return texture
 }
 
-/** An observed pose only: orbit/zoom never sends commands to the physical arm. */
+/** How opaque the preview ghost is drawn over the measured arm. */
+const GHOST_OPACITY = 0.32
+
+/**
+ * An observed pose only: orbit/zoom never sends commands to the physical arm. With the IMU controller,
+ * a translucent ghost shows Wearable Lab's preview: where Align & follow would move the arm.
+ */
 export default function ArmModel() {
   const host = useRef<HTMLDivElement>(null)
   const reset = useRef<() => void>(() => {})
   const [state, setState] = useState<ViewState>('loading')
   const [message, setMessage] = useState('Loading SO-101 model…')
   const [attempt, setAttempt] = useState(0)
+  const [showGhost, setShowGhost] = useState(true)
+  const [ghostShown, setGhostShown] = useState(false)
+  const ghostOn = useRef(showGhost)
+  useEffect(() => { ghostOn.current = showGhost }, [showGhost])
 
   useEffect(() => {
     const el = host.current!
@@ -169,6 +182,12 @@ export default function ArmModel() {
     let glowAt = -1
 
     let robot: URDFRobot | null = null
+    let ghost: URDFRobot | null = null
+    let ghostAt: number[] | null = null
+    let ghostVisible = false
+    const ghostMaterial = new MeshStandardMaterial({
+      color: colors.touch500, transparent: true, opacity: GHOST_OPACITY, depthWrite: false, roughness: 0.6,
+    })
     let previous: RobotMessage | null = null
     let hadData = false
     let priorSource = useSettings.getState().source
@@ -214,6 +233,20 @@ export default function ArmModel() {
           dirty = true
         }
       }
+      if (ghost) {
+        const lab = bus.ageMs('calibration', nowMs) < CALIBRATION_FRESH_MS ? bus.latest('calibration') : null
+        const pose = ghostOn.current && source !== 'simulator' ? ghostPose(lab?.physical, fresh ? sample.pos : null) : null
+        if ((pose !== null) !== ghostVisible) {
+          ghostVisible = pose !== null
+          ghost.visible = ghostVisible
+          setGhostShown(ghostVisible)
+          dirty = true
+        }
+        if (pose && !samePose(pose, ghostAt)) {
+          ghostAt = pose
+          dirty = setRobotPose(ghost, pose) || dirty
+        }
+      }
       // Avoid a continuous GPU load while the camera/model is stationary.
       if (dirty) { renderer.render(scene, camera); dirty = false }
     }, { el, hz: 30 })
@@ -230,6 +263,13 @@ export default function ArmModel() {
     void loadSO101(abort.signal).then((loaded) => {
       if (abort.signal.aborted) { disposeModel(loaded); return }
       robot = loaded
+      // Cloned before the load glows are attached. The ghost shares the meshes' geometry; only its material is its own.
+      ghost = loaded.clone()
+      ghost.traverse((node) => {
+        if (node instanceof Mesh) { node.material = ghostMaterial; node.renderOrder = 1 }
+      })
+      ghost.visible = false
+      scene.add(ghost)
       attachGlows(robot)
       scene.add(robot)
       dirty = true
@@ -257,6 +297,7 @@ export default function ArmModel() {
       }
       glowGeometry.dispose()
       glowTexture.dispose()
+      ghostMaterial.dispose()
       grid.geometry.dispose()
       for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.dispose()
       renderer.dispose()
@@ -280,8 +321,13 @@ export default function ArmModel() {
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule px-3 py-2">
         <div className="text-xs"><p className="text-ink" role="status">{state === 'ready' ? message : 'SO-101 · 3D model'}</p>
           <p className="mt-0.5 text-ink-3">Drag to orbit · scroll or pinch to zoom</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-ink-3"><span aria-hidden="true" className="inline-block size-2 rounded-full bg-alarm" />Red glow = joint load</p></div>
-        <Button size="sm" disabled={state !== 'ready'} onClick={() => reset.current()}>Reset view</Button>
+          <p className="mt-0.5 flex items-center gap-1.5 text-ink-3"><span aria-hidden="true" className="inline-block size-2 rounded-full bg-alarm" />Red glow = joint load</p>
+          {showGhost && ghostShown && <p className="mt-0.5 flex items-center gap-1.5 text-ink-3"><span aria-hidden="true" className="inline-block size-2 rounded-full bg-touch-500" />Ghost = where Align &amp; follow will move</p>}</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Switch label="Preview ghost" checked={showGhost} onChange={setShowGhost} disabled={state !== 'ready'}
+            description="Shows Wearable Lab's preview pose when the IMU controller is calibrated and a robot is connected." />
+          <Button size="sm" disabled={state !== 'ready'} onClick={() => reset.current()}>Reset view</Button>
+        </div>
       </div>
     </div>
   )

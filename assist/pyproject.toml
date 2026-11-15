@@ -1,0 +1,19 @@
+[project]
+name = "paul-assist"
+version = "0.1.0"
+description = "PAUL assist: asks Gemini about the wrist camera's picture and publishes suggestions and needed items on the `assist` topic"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1.0",
+    "python-dotenv>=1.0",
+    "pyyaml>=6",
+    "pyzmq>=26",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

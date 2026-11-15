@@ -29,7 +29,7 @@ SIZE = (720, 1280)
 def cfg(shipped_cfg, tmp_path):
     labels = LabelsConfig(dir=str(tmp_path / "labels"), max_tags=2, max_views=2, max_name_chars=20,
                           max_prompt_chars=30, snap_iou=0.5, border_margin=0.01, min_box_side=0.04,
-                          worker_timeout_s=10.0, worker_threads=2, load_timeout_s=5.0)
+                          worker_timeout_s=10.0, worker_threads=2, load_timeout_s=5.0, publish_s=2.0)
     detector = DetectorConfig(backend="auto", device="auto", weights=WeightsConfig(torch="w.pt", openvino="w.pt"),
                               imgsz=[384, 640], classes=list(CLASSES), conf_min=0.15, iou=0.5, max_det=20,
                               agnostic_nms=True, models_dir=str(tmp_path / "models"))
@@ -796,3 +796,51 @@ def test_startup_stops_with_the_command_that_fixes_a_failed_rebuild(cfg):
     stored(cfg, imgsz=(480, 640))
     with pytest.raises(RuntimeError, match=r"paul_vision\.labels rebuild.*labels remove"):
         lm.prepare_startup(cfg, Profile("torch", "cpu", "w.pt"), spawn=BlockingWorker(cfg, outcome="fail"))
+
+
+# --- several descriptions in one change (tag_text with `prompts`; ../assist sends Gemini's) ---
+
+def many(name="my mug", *prompts) -> LabelRequest:
+    return LabelRequest("tag_text", name, prompts=tuple(prompts))
+
+
+def test_several_descriptions_are_added_in_one_change_by_the_real_worker(cfg, monkeypatch):
+    real_worker(monkeypatch)
+    rig = Rig(dataclasses.replace(cfg, labels=dataclasses.replace(cfg.labels, max_views=4)))
+    rig.manager.teach(text("my mug", "red mug"))
+    rig.worker_runs()
+    rig.settle()
+    first_row = lb.load_view_embeddings(rig.dir, rig.manager.library)[0]
+
+    assert rig.manager.teach(many("my mug", "mug from above", "Red Mug", "mug handle side", "mug from above")) is True
+    assert rig.said[-1] == "Learning more about my mug."
+    spec = rig.spec()
+    assert "view" not in spec and spec["views"] == [{"kind": "text", "prompt": "mug from above"},
+                                                    {"kind": "text", "prompt": "mug handle side"}]  # no repeats
+    rig.worker_runs()
+    rig.settle()
+    assert rig.said[-1] == "My mug is ready." and len(rig.procs) == 2
+    tag = lb.load_library(rig.dir).tag("my mug")
+    assert [v.prompt for v in tag.views] == ["red mug", "mug from above", "mug handle side"]
+    rows = lb.load_view_embeddings(rig.dir, rig.manager.library)
+    assert rows.shape == (3, lb.EMBED_DIM)
+    np.testing.assert_array_equal(rows[0], first_row)  # the view that was there keeps its embedding
+    assert rig.detector.labels == [*CLASSES, "my mug", "my mug", "my mug"]
+
+
+def test_descriptions_are_cut_to_the_views_that_are_free_and_too_long_ones_are_left_out(cfg):
+    rig = Rig(cfg)
+    free = cfg.labels.max_views
+    prompts = [f"mug {i}" for i in range(free + 2)]
+    assert rig.manager.teach(many("my mug", "x" * (cfg.labels.max_prompt_chars + 1), *prompts)) is True
+    assert [v["prompt"] for v in rig.spec()["views"]] == prompts[:free]
+
+
+def test_descriptions_that_add_nothing_are_refused(cfg):
+    rig = Rig(cfg)
+    rig.manager.teach(text("my mug", "red mug"))
+    rig.worker_succeeds()
+    rig.settle()
+    assert rig.manager.teach(many("my mug", "RED MUG", "x" * (cfg.labels.max_prompt_chars + 1))) is False
+    assert rig.said[-1] == "Cannot learn my mug: there is no new description to add."
+    assert len(rig.procs) == 1

@@ -1,8 +1,9 @@
-import { AIM_DEFAULT, DEADZONE, LIMITS } from '../../config'
+import { AIM_DEFAULT, DEADZONE, DETECTOR_CLASSES, LIMITS } from '../../config'
 import type { Aim } from '../../lib/aim'
 import { clamp, quatFromEuler } from '../../lib/math'
+import { hapticDirection } from '../../lib/hapticDirection'
 import type { TelemetryBus } from '../bus'
-import type { Command, HapticCue, Phase, Topic, VisionMessage } from '../contracts'
+import type { AssistMessage, AssistResult, Command, HapticCue, Phase, Topic, VisionMessage } from '../contracts'
 import { TOPIC_INFO, TOPICS } from '../contracts'
 import { CYCLE_S, PHASE_STARTS, scenarioAt, summaryFor, type SimFrame } from './scenario'
 import type { Source } from './types'
@@ -11,6 +12,27 @@ const round = (value: number, digits: number): number => {
   const scale = 10 ** digits
   return Math.round(value * scale) / scale
 }
+
+/** A canned Gemini answer, so the Assist panel can be tried without a key or a camera. */
+const SIM_ASSIST: AssistResult = {
+  scene: 'Simulated: a person lying in bed beside a table with a cup and a pill bottle.',
+  patient: { present: true, observations: ['Lying still with eyes closed', 'Cup and pills within view'], urgency: 'watch', state: 'eyes_closed' },
+  touch_checks: [
+    { kind: 'wellness_nudge', text: 'Nudge the patient gently on the forearm and watch for a response', reason: 'Eyes closed and still: asleep or unresponsive cannot be told apart from the picture.' },
+    { kind: 'weight_check', text: 'Lift the cup to feel whether it is empty', reason: 'The patient may need a refill.' },
+  ],
+  suggestions: [
+    { text: 'Hand the patient the cup of water', item: 'cup' },
+    { text: 'Bring the pill bottle within reach', item: 'pill bottle' },
+    { text: 'Ask the caregiver to check on the cough', item: null },
+  ],
+  items: [
+    { name: 'cup', prompt: 'white ceramic cup', reason: 'Coughing; a drink may help.', visible: true, known: true },
+    { name: 'pill bottle', prompt: 'orange pill bottle with white cap', reason: 'Medication on the table.', visible: true, known: true },
+    { name: 'tissues', prompt: 'box of white tissues', reason: 'Coughing.', visible: false, known: false },
+  ],
+}
+const SIM_ASSIST_DELAY_MS = 1200
 
 /** Mirrors summary.min_interval_s in the vision config. */
 const SUMMARY_GAP_S = 2
@@ -42,6 +64,9 @@ export class Simulator implements Source {
   private hadTarget = false
   private squeezeAtMs: number | null = null
 
+  private assist: AssistMessage | null = null
+  private assistTimer: ReturnType<typeof setTimeout> | null = null
+
   private stalled = false
   private stalledAtMs = 0
   private stallBeats = 0
@@ -61,6 +86,8 @@ export class Simulator implements Source {
   stop(): void {
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
+    if (this.assistTimer !== null) clearTimeout(this.assistTimer)
+    this.assistTimer = null
   }
 
   send(command: Command): boolean {
@@ -86,13 +113,42 @@ export class Simulator implements Source {
         this.aligned = false // earned again from the new point, as vision's smoothing starts over
         break
       }
+      case 'assist_request':
+        if (this.assistTimer !== null) return true
+        this.publishAssist('working', null)
+        this.assistTimer = setTimeout(() => {
+          this.assistTimer = null
+          this.publishAssist('ok', SIM_ASSIST)
+        }, SIM_ASSIST_DELAY_MS)
+        break
       case 'tag_visual':
       case 'tag_text':
       case 'untag':
+      case 'calibrate_arm':
+      case 'tune_robot':
+      case 'control_slider':
+      case 'reconnect_robot':
+      case 'replay_robot':
+      case 'control_robot':
+      case 'configure_arm':
+      case 'set_joint_direction':
+      case 'test_haptic_motor':
         // The scripted scene has no detector to teach, so say the command was not taken rather than applied.
         return false
     }
     return true
+  }
+
+  private publishAssist(status: 'working' | 'ok', result: AssistResult | null): void {
+    this.assist = {
+      t: Math.round(Date.now()) / 1000,
+      seq: (this.assist?.seq ?? 0) + 1,
+      status,
+      detail: status === 'working' ? 'Looking at the scene.' : null,
+      model: 'simulator',
+      result,
+    }
+    this.bus.publish('assist', this.assist, performance.now())
   }
 
   // --- Test switches, used by the Signals page ---------------------------------------------------
@@ -152,6 +208,21 @@ export class Simulator implements Source {
   private emit(topic: Topic, frame: SimFrame, time: number, nowMs: number): void {
     const wall = Date.now() / 1000
     switch (topic) {
+      case 'assist':
+        // Repeated like the real process, only once an analysis was asked for.
+        if (this.assist && this.assistTimer === null) this.bus.publish('assist', this.assist, nowMs)
+        break
+      case 'calibration':
+        // Calibration needs three real IMUs; never report a synthetic hardware success.
+        break
+      case 'task':
+      case 'agent':
+        // Smart replay needs a real recording and a real arm; the simulator never invents Gemini's actions.
+        break
+      case 'labels':
+        // The scripted scene has the detector's classes and nothing taught (tag commands are not taken).
+        this.bus.publish('labels', { t: round(wall, 3), classes: [...DETECTOR_CLASSES], tags: [], busy: null }, nowMs)
+        break
       case 'vision': {
         const message = this.visionMessage(frame, time, wall, nowMs)
         if (message) this.bus.publish('vision', message, nowMs)
@@ -247,7 +318,7 @@ export class Simulator implements Source {
     }
   }
 
-  /** What the haptics layer would command for this frame. Motor order: up, right, down, left. */
+  /** Motor order: palm L/R, forearm L/R, matching the physical wearable. */
   private hapticOutput(frame: SimFrame, time: number): { motors: number[]; cue: HapticCue | null } {
     const off = { motors: [0, 0, 0, 0], cue: null }
     if (!this.hapticsEnabled) return off
@@ -258,13 +329,12 @@ export class Simulator implements Source {
     }
     if (frame.grip > 0.05) {
       const level = 0.15 + 0.6 * frame.grip
-      return { motors: [level, level, level, level], cue: 'contact' }
+      return { motors: [level, level, 0, 0], cue: 'contact' }
     }
     if (frame.phase === 'approach' && frame.status === 'ok' && !this.aligned && !this.stalled) {
       // Pulse the motor on the side the hand should move toward.
-      const pulse = (time * 4) % 1 < 0.6 ? 1 : 0
-      const drive = (v: number) => (v > 0.05 ? pulse * (0.15 + 0.8 * clamp((v - 0.05) / 0.5, 0, 1)) : 0)
-      return { motors: [drive(-frame.dy), drive(frame.dx), drive(frame.dy), drive(-frame.dx)], cue: 'guide' }
+      const pulse = time % 0.65 < 0.18 ? 0.45 : 0
+      return { motors: hapticDirection(frame.dx, frame.dy, pulse), cue: 'guide' }
     }
     return off
   }

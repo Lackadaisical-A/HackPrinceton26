@@ -37,12 +37,12 @@ export const PADS = [
   { key: 'right_base', label: 'Right base', finger: 'right', position: 'base' },
 ] as const
 
-/** Order of `haptics.motors`. Assumed: four motors around the forearm. */
+/** Confirmed wiring. Wire order is palm left/right, then forearm left/right. */
 export const MOTORS = [
-  { key: 'up', label: 'Top', angleDeg: -90 },
-  { key: 'right', label: 'Right', angleDeg: 0 },
-  { key: 'down', label: 'Bottom', angleDeg: 90 },
-  { key: 'left', label: 'Left', angleDeg: 180 },
+  { key: 'palm_left', label: 'Palm left', driver: 'DRV2605L' },
+  { key: 'palm_right', label: 'Palm right', driver: 'Transistor' },
+  { key: 'forearm_left', label: 'Forearm left', driver: 'Transistor' },
+  { key: 'forearm_right', label: 'Forearm right', driver: 'DRV2605L' },
 ] as const
 
 export const LIMITS = {

@@ -217,3 +217,37 @@ def test_validate_pressure_refuses_a_huge_int_with_a_value_error(msg):
     validate_pressure({"t": 1.0, "raw": [1, 2, 3, 4], "norm": [0.1, 0.2, 0.3, 0.4]})  # the same, without it
     with pytest.raises(ValueError):
         validate_pressure(msg)
+
+
+# --- the `labels` topic ---
+
+def test_a_labels_message_matches_the_contract():
+    from paul_vision.messages import build_labels_message, validate_labels
+
+    msg = build_labels_message(t=100.123456, classes=("cup", "bottle"), tags=[("my flask", 4), ("cup", 1)],
+                               busy="my flask")
+    assert msg == {"t": 100.1235, "classes": ["cup", "bottle"],
+                   "tags": [{"name": "my flask", "views": 4}, {"name": "cup", "views": 1}], "busy": "my flask"}
+    validate_labels(json.loads(json.dumps(msg)))
+    assert build_labels_message(t=1.0, classes=["cup"], tags=[])["busy"] is None
+
+
+@pytest.mark.parametrize("change, problem", [
+    (lambda m: m.pop("busy"), "keys"),
+    (lambda m: m.update(extra=1), "keys"),
+    (lambda m: m.update(t="now"), "t is not a number"),
+    (lambda m: m.update(classes="cup"), "classes"),
+    (lambda m: m.update(classes=["cup", ""]), "classes"),
+    (lambda m: m.update(tags=[{"name": "my flask"}]), "a tag is not"),
+    (lambda m: m.update(tags=[{"name": "my flask", "views": 0}]), "views"),
+    (lambda m: m.update(tags=[{"name": "my flask", "views": True}]), "views"),
+    (lambda m: m.update(tags=[{"name": "a", "views": 1}, {"name": "a", "views": 2}]), "twice"),
+    (lambda m: m.update(busy=""), "busy"),
+])
+def test_a_broken_labels_message_is_refused(change, problem):
+    from paul_vision.messages import build_labels_message, validate_labels
+
+    msg = build_labels_message(t=1.0, classes=["cup"], tags=[("my flask", 2)])
+    change(msg)
+    with pytest.raises(ValueError, match=problem):
+        validate_labels(msg)

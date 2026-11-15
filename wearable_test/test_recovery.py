@@ -56,6 +56,7 @@ class RecoveryTests(unittest.TestCase):
     def app(self):
         app = object.__new__(App)
         app.physical,app.physical_panel,app.calibration_revision = None,None,0
+        app.feedback = None
         app.hub = DemoHub()
         app.model = ArmModel()
         app.pose_a,app.pose_b = app.hub.frame("A"),app.hub.frame("B")

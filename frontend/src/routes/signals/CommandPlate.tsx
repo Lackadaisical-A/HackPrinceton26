@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { selectTarget, sendCommand, sendLabelCommand, type LabelCommand } from '../../app/runtime'
-import { DETECTOR_CLASSES, LABEL_LIMITS } from '../../config'
+import { LABEL_LIMITS } from '../../config'
 import { sentenceCase, timeOfDay } from '../../lib/format'
+import { ANY_TARGET, targetOptions as optionsFor } from '../../lib/targets'
 import { useSession } from '../../state/session'
 import type { Command, Phase } from '../../telemetry/contracts'
 import { COMMAND_TOPIC, encodeFrame, PHASES } from '../../telemetry/contracts'
@@ -12,12 +13,7 @@ import { TextField } from '../../ui/Field'
 import { Plate } from '../../ui/Plate'
 import { Segmented } from '../../ui/Segmented'
 
-const ANY = 'any'
-
-const TARGET_OPTIONS: readonly { value: string; label: string }[] = [
-  { value: ANY, label: 'Any object' },
-  ...DETECTOR_CLASSES.map((label) => ({ value: label, label: sentenceCase(label) })),
-]
+const ANY = ANY_TARGET
 
 const PHASE_OPTIONS = PHASES.map((phase) => ({ value: phase, label: sentenceCase(phase) }))
 
@@ -52,6 +48,8 @@ function Result({ outcome }: { outcome: Outcome | null }) {
 
 export function CommandPlate() {
   const [target, setTarget] = useState<string>(ANY)
+  const labels = useSession((s) => s.labels)
+  const targetOptions = useMemo(() => optionsFor(labels), [labels])
   const [phase, setPhase] = useState<Phase>('search')
   const [outcome, setOutcome] = useState<Outcome | null>(null)
   const [nameText, setNameText] = useState('')
@@ -102,7 +100,7 @@ export function CommandPlate() {
           <span className="text-sm font-medium text-ink" aria-hidden="true">
             Target
           </span>
-          <Segmented label="Target" value={target} options={TARGET_OPTIONS} onChange={setTarget} />
+          <Segmented label="Target" value={target} options={targetOptions} onChange={setTarget} />
           <Button onClick={sendTarget}>Send target</Button>
         </div>
 
