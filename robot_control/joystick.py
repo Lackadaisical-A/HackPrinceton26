@@ -4,10 +4,12 @@ from bno085_reader.joystick_calibration import load_calibration
 
 
 class JoystickClaw:
-    def __init__(self, axis="y", reverse=False, calibration=None):
+    def __init__(self, axis="y", reverse=False, calibration=None, button_stops=True):
         if axis not in ("x", "y"):
             raise ValueError("Joystick axis must be x or y")
         self.axis, self.reverse = axis, reverse
+        # False when the caller reads the button itself (wearable mode: tap records, hold stops).
+        self.button_stops = button_stops
         self.calibration = calibration or load_calibration()
         self.speed = .2  # Fraction of calibrated travel per second.
         self.max_lead = .02  # Fraction of travel ahead of measured position.
@@ -18,7 +20,7 @@ class JoystickClaw:
     def fresh(self, sample, now):
         if not sample["sequence"] or not 0 <= now-sample["seen"] <= .3:
             raise ValueError("joystick disconnected/stale")
-        if sample["pressed"]:
+        if sample["pressed"] and self.button_stops:
             raise ValueError("joystick button pressed")
         if any(not 0 <= sample[axis] <= 4095 for axis in ("x", "y")):
             raise ValueError("invalid joystick readings")
@@ -54,7 +56,9 @@ class JoystickClaw:
             raise ValueError("gripper position outside saved range")
         if abs(load) >= self.load_limit:
             raise ValueError("high gripper load")
-        desired = self.calibration.position(sample[self.axis], self.low, self.high, self.axis, self.reverse)
+        # Pushing the stick down wobbles its axes: keep the claw where it is meanwhile.
+        desired = self.previous if sample["pressed"] else \
+            self.calibration.position(sample[self.axis], self.low, self.high, self.axis, self.reverse)
         travel = self.high-self.low
         step = self.speed*travel*min(.1, max(0., dt))
         target = self.previous + max(-step, min(step, desired-self.previous))

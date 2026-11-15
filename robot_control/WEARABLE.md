@@ -30,13 +30,50 @@ Firebase. Demo input is rejected in physical mode.
    requests halfway. Enabling initially latches the current claw position;
    subsequent commands move gradually toward the requested opening.
 
-**Esc**, **STOP / HOLD ALL**, the physical window's **STOP / HOLD**, or pressing
-the joystick switch pauses arm and claw, and the UI stop controls also stop the
-wearable vibration tests. Closing or pausing the URDF preview pauses physical
-control. Closing the physical controls pauses it; reopen them with **Robot
-controls** in Wearable Lab. These actions hold already-powered joints at measured
-positions rather than dropping the arm by switching torque off. Released joints
-are not re-enabled by a stop.
+**Esc**, **STOP / HOLD ALL**, the physical window's **STOP / HOLD**, or holding
+the joystick switch down for 0.8 s pauses arm and claw, and the UI stop controls
+also stop the wearable vibration tests. A shorter press of the switch does not
+stop anything: it starts or stops a recording (below). Closing or pausing the
+URDF preview pauses physical control. Closing the physical controls pauses it;
+reopen them with **Robot controls** in Wearable Lab. These actions hold
+already-powered joints at measured positions rather than dropping the arm by
+switching torque off. Released joints are not re-enabled by a stop.
+
+## Record and replay
+
+1. **Tap the joystick switch** (press and release in under 0.8 s) to start
+   recording. The hand buzzes briefly and both windows show the recording time.
+   The claw keeps its target while the switch is down, so the tap does not move it.
+2. Move the robot. With arm/claw enabled, the commanded targets are recorded;
+   a joint that is not under control is recorded at its measured position, so an
+   unpowered arm can also be moved by hand.
+3. **Tap again** to stop (longer buzz). The motion is kept for this session and
+   saved as `recordings/motion_<UTC time>.json`. The newest saved motion is loaded
+   at startup. A recording stops by itself after 120 s; one under 0.2 s is discarded.
+4. Click **Replay last motion** in the physical controls. Live arm and claw
+   control switch off. The arm first moves from wherever it is to the pose where
+   the recording began, then repeats the motion, then holds the final pose.
+   Enable arm/claw again for live control.
+
+Replay does not need calibrated IMU input: it follows the recording, not your
+arm. It does need the Wearable Lab window running (300 ms heartbeat) and fresh
+joystick data, so that Stop and the joystick switch can reach it.
+
+Replay uses the live limits: the arm target rate and goal lead from
+`wearable_config.json`, the claw's 20%/s and 2% lead, the calibrated ranges and
+the same load thresholds. A motion recorded faster than the target rate (for
+example by hand) is replayed along the same path but slower. The gripper
+follows as closely as its limits allow and does not hold the arm up.
+
+**Any press of the joystick switch**, Esc, either STOP button, high load, torque
+loss, a tracking error, stale telemetry, a stalled UI or a lost joystick aborts
+a replay and holds position. So does a joint that makes no progress towards the recording for
+3 s. A press that stops a replay does not start a recording. A fault or Stop
+during a recording pauses motion but keeps recording until the next tap.
+
+**The move to the start pose is a straight joint-space move from the current
+pose.** Like live control, it has no collision avoidance: clear the space between
+the current pose and the recorded path before clicking Replay.
 
 ## Mapping and bounds
 
@@ -88,5 +125,7 @@ uv run robot_control/test_wearable.py
 Regression coverage includes read-only startup/shutdown, no-jump enabling,
 URDF-to-servo direction/rate/lead bounds, independent claw enable, calibration
 mismatch, stale input during hardware reads, UI stalls, slow robot telemetry,
-cancelled enables, torque/load faults, and explicit re-enable after recovery.
+cancelled enables, torque/load faults, explicit re-enable after recovery, and
+record/replay: tap versus hold, saving and reloading, bounded replay from a
+different pose, and every replay abort.
 Local reset and physical-controller events are in `wearable_test/runtime.log`.

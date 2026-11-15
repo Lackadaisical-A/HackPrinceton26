@@ -123,6 +123,7 @@ class App:
     def __init__(self, root, hub, physical=None):
         self.root, self.hub = root, hub
         self.physical,self.physical_panel = physical,None
+        self.was_recording = False
         self.calibration_revision = 0
         self.root.title("Wearable Lab — 3 IMUs · 4 haptics · joystick"+(" [DEMO]" if hub.demo else ""))
         self.root.configure(bg=BG)
@@ -479,6 +480,19 @@ class App:
         if now < self.next_status_ui:
             return
         self.next_status_ui = now+.1
+        if self.physical is not None:
+            robot = self.physical.snapshot()
+            recording = robot["recording"] is not None
+            if recording != self.was_recording:
+                self.was_recording = recording
+                # On stop the robot's own message says how long the take is and whether it was saved.
+                self.message.set("Recording the robot motion: tap the joystick again to stop." if recording else
+                                 robot["message"] if robot["message"].startswith("Record") else "Recording stopped.")
+                # The operator watches the arm, not the screen: a short buzz on the hand
+                # for start, a longer one for stop. Not during a capture, which needs stillness.
+                if not self.capture:
+                    try: self.hub.motor("wroom", 1, 60, .15 if recording else .4)
+                    except ValueError: pass  # No haptic driver; the screen still shows it.
         for name, board in snapshot.items():
             fields = board["fields"]
             status = "connected" if board["connected"] else "OFFLINE"

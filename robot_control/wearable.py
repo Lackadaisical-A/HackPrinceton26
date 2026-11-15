@@ -2,6 +2,9 @@
 
 Only the worker thread owns COM6. UI updates replace a single latest input;
 there is no motion queue. Connecting is read-only; motion needs manual enable.
+
+A stick tap starts/stops recording the motion; holding the stick pauses. A
+recorded motion is replayed on request inside the same rate/lead/load bounds.
 """
 from copy import deepcopy
 import json
@@ -14,11 +17,13 @@ import time
 
 from robot_control.arm import Arm,BODY,JOINTS
 from robot_control.joystick import JoystickClaw
+from robot_control.motion_replay import Replay,StickButton,duration,load_latest,save_motion,valid_samples
 from wearable_test.retarget import Retargeter
 
 HERE = Path(__file__).resolve().parent
 URDF = HERE.parent/"so101_sim/model/so101_new_calib.urdf"
 TICKS_PER_RADIAN = 4095/(2*math.pi)  # Matches the vendored LeRobot degree convention.
+MIN_RECORD_S,MAX_RECORD_S = .2,120
 
 
 def input_packet(geometry,snapshot,valid,reason,revision,reverse,now):
@@ -63,10 +68,19 @@ def bounded_follow(anchor,source_anchor,source,previous,measured,limits,dt,confi
 
 
 class WearableRobot:
-    def __init__(self,port,joystick_calibration,arm_factory=Arm,clock=time.monotonic,config=None):
+    def __init__(self,port,joystick_calibration,arm_factory=Arm,clock=time.monotonic,config=None,
+                 motion_dir=HERE.parent/"recordings"):
         self.port,self.arm_factory,self.clock = port,arm_factory,clock
         self.config = config or load_config()
-        self.claw = JoystickClaw(calibration=joystick_calibration)
+        # The stick button is read here: a tap records, a hold pauses.
+        self.claw = JoystickClaw(calibration=joystick_calibration,button_stops=False)
+        self.button = StickButton()
+        self.taps = 0
+        self.motion_dir = Path(motion_dir)
+        self.motion,loaded = load_latest(self.motion_dir)
+        logging.getLogger("wearable").info("Physical robot motion: %s",loaded)
+        self.recording = None  # (start time, samples) between two stick taps.
+        self.replay = None
         self.retarget = Retargeter(URDF)
         self.mapping_epoch = None
         self.lock = threading.Lock()
@@ -78,16 +92,27 @@ class WearableRobot:
         self.enabled = False
         self.active_epoch = None
         self.status = dict(connected=False,enabled=False,claw_enabled=False,can_enable=False,
-                           message=f"Connecting to {port} (read only)",seen=None,positions={},loads={},torque={},targets={})
+                           message=f"Connecting to {port} (read only)",seen=None,positions={},loads={},torque={},targets={},
+                           **self.motion_status())
         self.thread = threading.Thread(target=self.run,daemon=True,name="Physical SO101 wearable controller")
 
     def start(self): self.thread.start()
 
     def submit(self,packet):
-        with self.lock: self.packet = deepcopy(packet)
+        # The UI submits every 20 ms, fast enough to see a short tap; the 50 ms worker cycle is not.
+        stop = None
+        with self.lock:
+            self.packet = deepcopy(packet)
+            event = self.button.update(packet["joystick"],self.clock())
+            if event=="tap": self.taps += 1
+            elif event=="hold": stop = "joystick switch held"
+            if self.replay is not None and self.button.pressed:
+                self.button.consume()  # This press stops the replay; it must not also start a recording.
+                stop = "stick pressed: replay stopped"
+        if stop: self.pause(stop)
 
     def request(self,command):
-        if command not in ("enable_arm","enable_claw"): raise ValueError("Unknown robot command")
+        if command not in ("enable_arm","enable_claw","replay"): raise ValueError("Unknown robot command")
         with self.lock: generation = self.generation
         self.commands.put((command,generation,self.clock()))
 
@@ -117,8 +142,19 @@ class WearableRobot:
             raise ValueError("wearable data or UI heartbeat stale")
         if epoch is not None and packet["epoch"]!=epoch:
             raise ValueError("sensor/reference/direction changed; re-enable from the current pose")
-        self.claw.fresh(packet["joystick"],now)  # Hand switch stops arm as well as claw.
+        self.claw.fresh(packet["joystick"],now)  # A lost hand joystick stops arm as well as claw.
         return packet
+
+    def ui_alive(self,generation):
+        """Replay needs no wearable pose, but Stop/Esc and the hand stick must still be able to reach it."""
+        now = self.clock()
+        with self.lock:
+            packet,current_generation = self.packet,self.generation
+        if self.closed.is_set(): raise ValueError("controller is closing")
+        if generation!=current_generation: raise ValueError("operator pause")
+        if packet is None or not math.isfinite(packet["published"]) or not 0<=now-packet["published"]<.3:
+            raise ValueError("UI heartbeat stale")
+        self.claw.fresh(packet["joystick"],now)  # As in live control: no motion without the hand-side stop.
 
     def source_target(self,packet):
         if packet["epoch"]!=self.mapping_epoch:
@@ -127,11 +163,59 @@ class WearableRobot:
         return self.retarget.targets(packet["geometry"],packet["reverse"])
 
     def pause_motion(self,arm,reason):
-        had_control = self.enabled or self.claw.enabled
+        had_control = self.enabled or self.claw.enabled or self.replay is not None
         self.enabled = False
         self.claw.pause(reason)
+        with self.lock: self.replay = None
         if had_control: arm.hold_enabled()
         self.note("PAUSED: "+reason+". Manual enable required.")
+
+    def motion_status(self):
+        return dict(recording=None if self.recording is None else self.clock()-self.recording[0],
+                    replay=None if self.replay is None else (self.replay.phase,self.replay.elapsed,self.replay.duration),
+                    motion=None if self.motion is None else duration(self.motion))
+
+    def stick_tapped(self,arm):
+        if self.replay is not None: self.pause_motion(arm,"stick pressed: replay stopped")
+        elif self.recording is None:
+            self.recording = (self.clock(),[])
+            self.note("RECORDING the robot motion: tap the stick again to stop")
+        else: self.note(self.finish_recording())
+
+    def finish_recording(self):
+        """Keep the take as the motion to replay and save it. Returns what happened."""
+        samples,self.recording = self.recording[1],None
+        try:
+            if valid_samples(samples) and duration(samples)<MIN_RECORD_S: raise ValueError("too short")
+        except ValueError as error: return f"Recording discarded: {error}"
+        self.motion = samples
+        try: saved = "saved as "+save_motion(self.motion_dir,samples).name
+        except OSError as error: saved = f"NOT saved to disk ({error})"
+        return f"Recorded {duration(samples):.1f} s; {saved}. Replay last motion plays it."
+
+    def start_replay(self,arm,loads,generation):
+        if self.motion is None: raise ValueError("no recorded motion; tap the stick to record one")
+        if self.recording is not None: raise ValueError("stop the recording first")
+        self.ui_alive(generation)
+        if any(abs(loads[n])>=self.config["max_load"] for n in BODY) or abs(loads["gripper"])>=self.claw.load_limit:
+            raise ValueError("high load")
+        measured = {**arm.validate_motion(),"gripper":arm.validate_gripper()}
+        limits = {n:arm.limits(n) for n in JOINTS}
+        travel = limits["gripper"][1]-limits["gripper"][0]
+        # The same bounds as live control: arm from wearable_config.json, gripper from the claw.
+        rate = dict.fromkeys(BODY,math.radians(self.config["speed_deg_s"])*TICKS_PER_RADIAN)
+        lead = dict.fromkeys(BODY,math.radians(self.config["max_lead_deg"])*TICKS_PER_RADIAN)
+        rate["gripper"],lead["gripper"] = self.claw.speed*travel,self.claw.max_lead*travel
+        replay = Replay(self.motion,measured,limits,rate,lead)
+        self.ui_alive(generation)
+        # Take over from live control at the measured pose, so nothing jumps.
+        self.enabled = False
+        self.claw.pause("replaying a recorded motion")
+        with self.lock: self.replay = replay  # From here a refusal holds every powered joint.
+        self.replay_generation = generation
+        arm.latch_and_enable({n:measured[n] for n in BODY})
+        arm.latch_gripper_and_enable(measured["gripper"])
+        self.note("REPLAY: moving to the recorded start pose. Stick press, Esc or STOP aborts.")
 
     def cycle(self,arm,dt):
         # No cached telemetry may authorize a motion write.
@@ -146,17 +230,24 @@ class WearableRobot:
             generation = self.generation
             pause = self.pause_pending
             self.pause_pending = None
+            taps,self.taps = self.taps,0
         if pause: self.pause_motion(arm,pause)
+        for _ in range(taps): self.stick_tapped(arm)
         try:
             self.checked_packet()
             can_enable = True
         except (ValueError,KeyError,TypeError): can_enable = False
-        new_arm = new_claw = False
+        new_arm = new_claw = new_replay = False
         while True:
             try: command,requested_generation,requested_at = self.commands.get_nowait()
             except queue.Empty: break
             if requested_generation!=generation or self.clock()-requested_at>.5: continue
+            if self.replay is not None: continue  # Nothing else takes the arm during a replay.
             try:
+                if command=="replay":  # Needs no wearable input, so no checked_packet.
+                    self.start_replay(arm,loads,generation)
+                    new_replay = True
+                    continue
                 packet = self.checked_packet(generation)
                 if command=="enable_arm":
                     if self.enabled: continue
@@ -189,9 +280,23 @@ class WearableRobot:
                     new_claw = True
                     self.note("Claw enabled: Y=0 open, Y=4095 closed; neutral halfway")
             except (ValueError,KeyError,TypeError) as error:
-                self.pause_motion(arm,f"Enable refused: {error}")
+                self.pause_motion(arm,f"{'Replay' if command=='replay' else 'Enable'} refused: {error}")
         targets = {}
         try:
+            if self.replay is not None and not new_replay:
+                if self.clock()-telemetry_started>=.25: raise ValueError("robot telemetry too slow/stale")
+                self.ui_alive(self.replay_generation)
+                if any(abs(loads[n])>=self.config["max_load"] for n in BODY) or abs(loads["gripper"])>=self.claw.load_limit:
+                    raise ValueError("high load during replay")
+                if not all(torque[n] for n in JOINTS): raise ValueError("torque switched off during replay")
+                target,done = self.replay.step(positions,dt)
+                self.ui_alive(self.replay_generation)
+                arm.move_raw({n:target[n] for n in BODY})
+                arm.move_gripper(target["gripper"])
+                targets.update(target)
+                if done:
+                    with self.lock: self.replay = None
+                    self.note("Replay finished: holding the final pose. Enable arm/claw for live control.")
             if self.enabled and not new_arm:
                 if self.clock()-telemetry_started>=.25: raise ValueError("robot telemetry too slow/stale")
                 packet = self.checked_packet(self.active_generation,self.active_epoch)
@@ -215,9 +320,17 @@ class WearableRobot:
         except (ValueError,KeyError,TypeError) as error:
             self.pause_motion(arm,str(error))
             targets = {}
+        if self.recording is not None:
+            # The commanded target where a joint is under control (keeps the same squeeze
+            # and sag on replay), the measured position where it is not (hand-guided).
+            started,samples = self.recording
+            elapsed = self.clock()-started
+            samples.append([round(elapsed,3),*(round(min(4095.,max(0.,float(targets.get(n,positions[n])))),1) for n in JOINTS)])
+            if elapsed>=MAX_RECORD_S: self.note(self.finish_recording()+f" Stopped at the {MAX_RECORD_S} s limit.")
         with self.lock:
             self.status.update(connected=True,enabled=self.enabled,claw_enabled=self.claw.enabled,can_enable=can_enable,
-                               seen=self.clock(),positions=positions,loads=loads,torque=torque,targets=targets)
+                               seen=self.clock(),positions=positions,loads=loads,torque=torque,targets=targets,
+                               **self.motion_status())
 
     def run(self):
         arm = None
@@ -238,12 +351,17 @@ class WearableRobot:
         finally:
             self.enabled = False
             self.claw.pause("controller stopped")
+            with self.lock: self.replay = None
             if arm is not None:
                 try: arm.hold_enabled()
                 except Exception: logging.getLogger("wearable").exception("Could not send robot hold")
                 try: arm.close()
                 except Exception: logging.getLogger("wearable").exception("Could not close robot port")
-            with self.lock: self.status.update(connected=False,enabled=False,claw_enabled=False,can_enable=False)
+            if self.recording is not None:  # Keep the take; the status message keeps the reason for stopping.
+                try: logging.getLogger("wearable").info("Physical robot: %s",self.finish_recording())
+                except Exception: logging.getLogger("wearable").exception("Could not save the recording")
+            with self.lock:
+                self.status.update(connected=False,enabled=False,claw_enabled=False,can_enable=False,**self.motion_status())
 
     def close(self):
         self.pause("window closed")
