@@ -5,7 +5,7 @@
  * the same encoding the Python side uses over ZMQ (computer_vision/paul_vision/messages.py), so
  * the ZMQ-to-WebSocket bridge can relay frames without rewriting them.
  *
- * `vision`, `pressure` and the first three commands are defined by the vision module.
+ * `vision`, `pressure` and every command but `set_haptics` are defined by the vision module.
  * `robot` is published by the pot controller (and can be reused by the IMU controller).
  * `imu`, `haptics` and `set_haptics` remain proposals. See TOPIC_INFO below.
  */
@@ -22,6 +22,10 @@ export type DistanceHint = (typeof DISTANCE_HINTS)[number]
 export const HAPTIC_CUES = ['guide', 'contact', 'limit', 'resistance'] as const
 export type HapticCue = (typeof HAPTIC_CUES)[number]
 
+/** Mirrors paul_vision.phase.ALERTS. */
+export const VISION_ALERTS = ['dropped'] as const
+export type VisionAlert = (typeof VISION_ALERTS)[number]
+
 export type BBox = [x1: number, y1: number, x2: number, y2: number]
 
 export interface VisionTarget {
@@ -34,7 +38,10 @@ export interface VisionTarget {
 }
 
 export interface VisionGuidance {
-  /** Target centre minus frame centre, -1 to 1. Positive is right and down in gripper terms. */
+  /**
+   * Target centre minus the aim point (where the gripper shows: the frame centre unless guidance.aim or set_aim moves
+   * it), -1 to 1. Positive is right and down in gripper terms.
+   */
   dx: number
   dy: number
   distance_hint: DistanceHint
@@ -54,6 +61,11 @@ export interface VisionMessage {
   guidance: VisionGuidance | null
   /** A sentence to speak, or null when there is nothing new to say. */
   summary: string | null
+  /**
+   * "dropped" while contact was lost in carry (repeated on every message for phase.alert_hold_s), else null.
+   * Independent of status. Absent in recordings made before vision milestone 2.
+   */
+  alert?: VisionAlert | null
 }
 
 export interface PressureMessage {
@@ -109,9 +121,17 @@ export type Topic = keyof TopicMap
 export const TOPICS = ['vision', 'pressure', 'imu', 'robot', 'haptics'] as const satisfies readonly Topic[]
 
 export type Command =
+  /** A detector class or a name the operator taught. */
   | { type: 'select_target'; label: string }
   | { type: 'clear_target' }
   | { type: 'set_phase'; phase: Phase }
+  /** Measure guidance from this point of the picture (fractions 0 to 1): where the gripper's grasp point shows. */
+  | { type: 'set_aim'; x: number; y: number }
+  /** Teach a name from a box on the picture (normalised corners), or from the locked target when bbox is null. */
+  | { type: 'tag_visual'; name: string; bbox: BBox | null }
+  /** Teach a name from a written description; the prompt defaults to the name. */
+  | { type: 'tag_text'; name: string; prompt?: string }
+  | { type: 'untag'; name: string }
   /** Proposed. */
   | { type: 'set_haptics'; enabled: boolean }
 
@@ -135,7 +155,7 @@ export const TOPIC_INFO: Record<Topic, TopicInfo> = {
     rateHz: 30,
     origin: 'computer_vision, ZMQ port 5555',
     example:
-      'vision {"t":1731542400.123,"frame_id":1042,"status":"ok","phase":"approach","target":{"track_id":7,"label":"cup","source":"yolo","bbox":[0.41,0.3,0.62,0.58],"confidence":0.91},"guidance":{"dx":-0.12,"dy":0.05,"distance_hint":"near","aligned":false},"summary":"Cup near, slightly left."}',
+      'vision {"t":1731542400.123,"frame_id":1042,"status":"ok","phase":"approach","target":{"track_id":7,"label":"cup","source":"yolo","bbox":[0.41,0.3,0.62,0.58],"confidence":0.91},"guidance":{"dx":-0.12,"dy":0.05,"distance_hint":"near","aligned":false},"summary":"Cup near, slightly left.","alert":null}',
   },
   pressure: {
     title: 'Gripper pressure',
@@ -172,6 +192,11 @@ export const COMMAND_EXAMPLES: { frame: string; standing: 'contract' | 'proposed
   { frame: 'command {"t":1731542400.2,"type":"select_target","label":"pill bottle"}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"clear_target"}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"set_phase","phase":"search"}', standing: 'contract' },
+  { frame: 'command {"t":1731542400.2,"type":"set_aim","x":0.52,"y":0.61}', standing: 'contract' },
+  { frame: 'command {"t":1731542400.2,"type":"tag_visual","name":"my flask","bbox":[0.3,0.25,0.55,0.7]}', standing: 'contract' },
+  { frame: 'command {"t":1731542400.2,"type":"tag_visual","name":"my flask","bbox":null}', standing: 'contract' },
+  { frame: 'command {"t":1731542400.2,"type":"tag_text","name":"pill bottle","prompt":"small orange pill bottle"}', standing: 'contract' },
+  { frame: 'command {"t":1731542400.2,"type":"untag","name":"my flask"}', standing: 'contract' },
   { frame: 'command {"t":1731542400.2,"type":"set_haptics","enabled":false}', standing: 'proposed' },
 ]
 
@@ -186,7 +211,10 @@ function numberList(v: unknown, length: number, lo: number, hi: number): v is nu
   return Array.isArray(v) && v.length === length && v.every((n) => within(n, lo, hi))
 }
 
-/** Mirrors paul_vision.messages.validate_vision. */
+/**
+ * The checks of paul_vision.messages.validate_vision that the console relies on. Lenient where the Python side
+ * is strict: extra keys pass, and `alert` may be missing (recordings made before vision milestone 2).
+ */
 export function validateVision(m: unknown): string | null {
   if (!isObject(m)) return 'not an object'
   if (!isNumber(m.t)) return 't must be a number'
@@ -194,6 +222,9 @@ export function validateVision(m: unknown): string | null {
   if (!VISION_STATUSES.includes(m.status as VisionStatus)) return `unknown status ${JSON.stringify(m.status)}`
   if (!PHASES.includes(m.phase as Phase)) return `unknown phase ${JSON.stringify(m.phase)}`
   if (m.summary !== null && typeof m.summary !== 'string') return 'summary must be a string or null'
+  if (m.alert !== undefined && m.alert !== null && !VISION_ALERTS.includes(m.alert as VisionAlert)) {
+    return `unknown alert ${JSON.stringify(m.alert)}`
+  }
 
   if (m.status !== 'ok') {
     if (m.target !== null || m.guidance !== null) return 'target and guidance must be null unless status is ok'

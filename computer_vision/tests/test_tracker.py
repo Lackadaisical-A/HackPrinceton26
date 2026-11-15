@@ -1,9 +1,12 @@
 import dataclasses
 
+import pytest
 from conftest import det
 
+from paul_vision import tracker as tracker_module
+from paul_vision.aruco import SOURCE_ARUCO, STATION_DROP, STATION_PICK
 from paul_vision.config import TrackerConfig
-from paul_vision.tracker import IouTracker
+from paul_vision.tracker import IDENTITY_SOURCES, IouTracker
 
 CFG = TrackerConfig(iou_min=0.3, center_dist_max=0.15, ttl_s=1.0, label_memory_s=10.0, label_margin=0.2)
 
@@ -110,3 +113,84 @@ def test_reset_forgets_tracks_but_never_reuses_ids():
     tracker.update([det()], t=0.0)
     tracker.reset()
     assert tracker.update([det()], t=0.03)[0].track_id == 2
+
+
+# --- station markers: the label is the decoded id, an identity ----------------------------------------
+
+
+def marker(label: str, cx: float, cy: float = 0.5, conf: float = 0.95):
+    return det(label, conf=conf, cx=cx, cy=cy, w=0.12, h=0.12 * 16 / 9, source=SOURCE_ARUCO)
+
+
+def run(frames: list[list]) -> list[list]:
+    """Feed one list of detections per frame at 30 FPS; return the tracks of every frame."""
+    tracker = IouTracker(CFG)
+    return [tracker.update(dets, t=i / 30) for i, dets in enumerate(frames)]
+
+
+def assert_markers_keep_their_identity(frames: list[list], out: list[list]) -> None:
+    """Every marker track reports its detection's label, and each station keeps a single track_id."""
+    ids: dict[str, set[int]] = {}
+    for dets, tracks in zip(frames, out):
+        for d, tr in zip(dets, tracks):
+            assert tr.label == d.label
+            ids.setdefault(d.label, set()).add(tr.track_id)
+    assert all(len(v) == 1 for v in ids.values()), ids
+    assert ids[STATION_PICK].isdisjoint(ids[STATION_DROP])
+
+
+def test_only_the_marker_source_has_identity_labels():
+    assert IDENTITY_SOURCES == {SOURCE_ARUCO}
+
+
+def test_markers_side_by_side_never_take_each_others_track():
+    # The drop station is followed alone; the pick station, 0.12 to its right, comes into view on the one
+    # frame the drop station is missed, close enough to continue the drop station's track by centre distance.
+    frames = ([[marker(STATION_DROP, 0.50)]] * 30 + [[marker(STATION_PICK, 0.62)]]
+              + [[marker(STATION_DROP, 0.50), marker(STATION_PICK, 0.62)]] * 10)
+    out = run(frames)
+    assert_markers_keep_their_identity(frames, out)
+    assert out[30][0].track_id != out[0][0].track_id
+
+
+def crossing() -> list[list]:
+    # Each moves 0.03 a frame; just after they meet, each detection overlaps the other's last box more than its own.
+    return [[marker(STATION_PICK, 0.30 + 0.03 * i), marker(STATION_DROP, 0.70 - 0.03 * i, cy=0.52)] for i in range(15)]
+
+
+def test_crossing_markers_keep_their_tracks():
+    frames = crossing()
+    assert_markers_keep_their_identity(frames, run(frames))
+
+
+def test_a_marker_in_the_place_of_the_other_starts_its_own_track():
+    frames = [[marker(STATION_DROP, 0.5)]] * 30 + [[marker(STATION_PICK, 0.5)]] * 10 + [[marker(STATION_DROP, 0.5)]]
+    out = run(frames)
+    assert_markers_keep_their_identity(frames, out)
+    assert out[-1][0].track_id == out[0][0].track_id  # the drop station's track was still alive (ttl_s)
+
+
+@pytest.mark.parametrize("scenario", ["side by side", "crossing", "replaced"])
+def test_without_the_identity_rule_markers_would_swap(monkeypatch, scenario):
+    # Not vacuous: label-blind matching, as objects get, hands one station's track (and name) to the other.
+    monkeypatch.setattr(tracker_module, "IDENTITY_SOURCES", frozenset())
+    frames = {
+        "side by side": [[marker(STATION_DROP, 0.50)]] * 30 + [[marker(STATION_PICK, 0.62)]],
+        "crossing": crossing(),
+        "replaced": [[marker(STATION_DROP, 0.5)]] * 30 + [[marker(STATION_PICK, 0.5)]],
+    }[scenario]
+    out = run(frames)
+    assert any(tr.label != d.label for dets, tracks in zip(frames, out) for d, tr in zip(dets, tracks))
+
+
+def test_objects_still_match_across_labels_beside_markers():
+    tracker = IouTracker(CFG)
+    stations = [marker(STATION_DROP, 0.5, cy=0.3), marker(STATION_PICK, 0.62, cy=0.3)]
+    labels = ["cup", "bottle", "bottle", "pill bottle", "bottle"]
+    confs = [0.25, 0.8, 0.8, 0.5, 0.8]
+    out = [tracker.update(stations + [det(label, conf=conf, cx=0.5, cy=0.6)], t=i * 0.05)
+           for i, (label, conf) in enumerate(zip(labels, confs))]
+    objects = [tracks[2] for tracks in out]
+    assert {tr.track_id for tr in objects} == {objects[0].track_id}       # label-blind continuation
+    assert [tr.label for tr in objects] == ["cup", "bottle", "bottle", "bottle", "bottle"]  # the vote
+    assert [{tr.label for tr in tracks[:2]} for tracks in out] == [{STATION_DROP, STATION_PICK}] * 5

@@ -1,3 +1,4 @@
+import type { Aim } from '../../lib/aim'
 import type { SimFrame } from '../../telemetry/sources/scenario'
 
 /**
@@ -125,12 +126,13 @@ function drawObject(ctx: CanvasRenderingContext2D, label: string, x: number, y: 
   ctx.fill()
 }
 
-function drawJaws(ctx: CanvasRenderingContext2D, w: number, h: number, openPercent: number): void {
-  const cx = w / 2
+/** The jaws close on the aim point: centred on it, their tips a little below it, as the crosshair shows. */
+function drawJaws(ctx: CanvasRenderingContext2D, w: number, h: number, openPercent: number, aim: Aim): void {
+  const cx = w * aim.x
   const open = openPercent / 100
   const gapTip = w * (0.105 + 0.21 * open)
   const gapNear = gapTip * 1.45
-  const tipY = h * 0.6
+  const tipY = h * (aim.y + 0.1)
   const thickTip = w * 0.05
   const thickNear = w * 0.1
 
@@ -157,7 +159,14 @@ function drawJaws(ctx: CanvasRenderingContext2D, w: number, h: number, openPerce
 }
 
 /** @param dimmed draws the scene darkened, for when the feed is lost and the picture is stale */
-export function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SimFrame, dimmed: boolean): void {
+export function drawScene(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  frame: SimFrame,
+  dimmed: boolean,
+  aim: Aim,
+): void {
   ctx.setLineDash([])
   ctx.fillStyle = bench(ctx, w, h)
   ctx.fillRect(0, 0, w, h)
@@ -187,7 +196,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, w: number, h: number, f
     const [x1, y1, x2, y2] = frame.box
     drawObject(ctx, frame.label, x1 * w, y1 * h, (x2 - x1) * w, (y2 - y1) * h)
   }
-  drawJaws(ctx, w, h, frame.joints[5])
+  drawJaws(ctx, w, h, frame.joints[5], aim)
 
   if (dimmed) {
     ctx.fillStyle = 'rgb(28 11 33 / 0.6)'

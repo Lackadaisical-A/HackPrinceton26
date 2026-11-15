@@ -4,13 +4,18 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
+from .aruco import SOURCE_ARUCO
 from .config import Config
 from .geometry import center
 from .types import STATUS_LOW_CONFIDENCE, STATUS_OK, Guidance, Track
+
+if TYPE_CHECKING:
+    from .pressure import Contact
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +24,23 @@ QUIT, SNAPSHOT, PAUSE = "quit", "snapshot", "pause"
 
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
 _GREEN, _YELLOW, _RED, _GREY, _WHITE = (80, 220, 80), (0, 215, 255), (60, 60, 230), (170, 170, 170), (255, 255, 255)
+_MAGENTA = (230, 80, 230)  # station markers that are not the target: they must not look like objects
 _STATUS_COLOURS = {STATUS_OK: _GREEN, STATUS_LOW_CONFIDENCE: _YELLOW}
+
+
+def grip_line(contact: Contact | None, source: str = "pads") -> tuple[str, tuple[int, int, int]]:
+    """What the grip signal says, for the overlay: state and level, or that there is no data.
+
+    source: "pads" (the `pressure` topic) or "load" (the gripper servo's load, gripper_load.py).
+    """
+    name, data = ("grip (load)", "no load data") if source == "load" else ("grip", "no pressure data")
+    if contact is None or not contact.fresh:
+        return f"{name}: {data}", _GREY
+    if contact.state is None:
+        return f"{name}: deciding {contact.level:.2f}", _YELLOW
+    if contact.state:
+        return f"{name}: holding {contact.level:.2f}", _GREEN
+    return f"{name}: open {contact.level:.2f}", _WHITE
 
 
 _STATUS_LINE_HEIGHT = 34  # labels stay out of this strip at the top of the window
@@ -57,44 +78,55 @@ def _pixels(bbox, width: int, height: int) -> tuple[int, int, int, int]:
 def render(image: np.ndarray, cfg: Config, *, status: str, phase: str, tracks: list[Track] = (),
            target: Track | None = None, guidance: Guidance | None = None, coasting: bool = False,
            summary: str | None = None, fps: float = 0.0, latency_ms: float = 0.0,
-           banner: str | None = None) -> np.ndarray:
-    """A downscaled copy of the frame with everything the pipeline decided drawn on it."""
+           banner: str | None = None, pressure_feed: bool = False, grip_source: str = "pads",
+           contact: Contact | None = None, alert: str | None = None, forced: bool = False,
+           aim: tuple[float, float] | None = None) -> np.ndarray:
+    """A downscaled copy of the frame with everything the pipeline decided drawn on it.
+
+    pressure_feed: a grip feed is configured, so the grip line is drawn (from `contact`); grip_source says which
+    ("pads" or "load", the gripper servo's load). alert: drawn as a
+    banner while the message carries it. forced: the phase was set by command. aim: where guidance is measured
+    from (Pipeline.aim, which set_aim moves), as fractions; cfg.guidance.aim when not given.
+    """
     scale = min(1.0, cfg.overlay.max_width / image.shape[1])
     if scale < 1.0:
         canvas = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     else:
         canvas = image.copy()
     height, width = canvas.shape[:2]
-    cx, cy = width // 2, height // 2
+    cy = height // 2
+    aim_x, aim_y = aim if aim is not None else cfg.guidance.aim
+    ax, ay = int(round(aim_x * width)), int(round(aim_y * height))
 
-    # Frame centre and the zone in which the target counts as aligned.
+    # The aim point (the gripper's place in the picture) and the zone in which the target counts as aligned.
     radii = (max(1, int(cfg.guidance.deadzone_enter * width / 2)), max(1, int(cfg.guidance.deadzone_enter * height / 2)))
     aligned = bool(guidance and guidance.aligned)
-    cv2.ellipse(canvas, (cx, cy), radii, 0, 0, 360, _GREEN if aligned else _GREY, 1, cv2.LINE_AA)
-    cv2.drawMarker(canvas, (cx, cy), _GREEN if aligned else _GREY, cv2.MARKER_CROSS, 16, 1)
+    cv2.ellipse(canvas, (ax, ay), radii, 0, 0, 360, _GREEN if aligned else _GREY, 1, cv2.LINE_AA)
+    cv2.drawMarker(canvas, (ax, ay), _GREEN if aligned else _GREY, cv2.MARKER_CROSS, 16, 1)
 
     for tr in tracks:
         if target is not None and tr.track_id == target.track_id:
             continue
         x1, y1, x2, y2 = _pixels(tr.bbox, width, height)
-        cv2.rectangle(canvas, (x1, y1), (x2, y2), _GREY, 1)
-        _text(canvas, f"{tr.label} {tr.confidence:.2f} #{tr.track_id}", _label_origin(x1, y1), _GREY, 0.45)
+        colour = _MAGENTA if tr.source == SOURCE_ARUCO else _GREY
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), colour, 1)
+        _text(canvas, f"{tr.label} {tr.confidence:.2f} #{tr.track_id}", _label_origin(x1, y1), colour, 0.45)
 
     if target is not None:
         colour = _YELLOW if coasting else _GREEN
         x1, y1, x2, y2 = _pixels(target.bbox, width, height)
         cv2.rectangle(canvas, (x1, y1), (x2, y2), colour, 2)
         if guidance is not None and not guidance.aligned:
-            # The arrow shows the published (smoothed) offset: from the centre towards the target.
-            tip = (int(cx + guidance.dx * width / 2), int(cy + guidance.dy * height / 2))
-            cv2.arrowedLine(canvas, (cx, cy), tip, colour, 2, cv2.LINE_AA, tipLength=0.15)
+            # The arrow shows the published (smoothed) offset: from the aim point towards the target.
+            tip = (int(ax + guidance.dx * width / 2), int(ay + guidance.dy * height / 2))
+            cv2.arrowedLine(canvas, (ax, ay), tip, colour, 2, cv2.LINE_AA, tipLength=0.15)
         else:
             tx, ty = center(target.bbox)
             cv2.circle(canvas, (int(tx * width), int(ty * height)), 4, colour, -1, cv2.LINE_AA)
         # Drawn after the arrow so the label stays readable.
         _text(canvas, f"{target.label} {target.confidence:.2f} #{target.track_id}", _label_origin(x1, y1), colour)
 
-    line = f"{status.upper()}  {phase}"
+    line = f"{status.upper()}  {phase}" + (" (set)" if forced else "")
     if guidance is not None:
         line += f"  dx {guidance.dx:+.2f} dy {guidance.dy:+.2f}  {guidance.distance_hint}"
         line += "  ALIGNED" if guidance.aligned else ""
@@ -102,8 +134,14 @@ def render(image: np.ndarray, cfg: Config, *, status: str, phase: str, tracks: l
     _text(canvas, line, (10, 24), _STATUS_COLOURS.get(status, _RED), 0.6)
     timing = f"{fps:.0f} FPS  {latency_ms:.0f} ms"
     _text(canvas, timing, (width - _text_width(timing, 0.5) - 10, 24), _WHITE, 0.5)
+    if pressure_feed:
+        grip, grip_colour = grip_line(contact, grip_source)
+        _text(canvas, grip, (10, 50), grip_colour, 0.5)
     if summary:
         _text(canvas, f'"{summary}"', (10, height - 14), _WHITE, 0.6)
+    if alert:
+        text = f"ALERT: {alert.upper()}"
+        _text(canvas, text, ((width - _text_width(text, 1.0)) // 2, cy + 60), _RED, 1.0)
     if banner:
         _text(canvas, banner, ((width - _text_width(banner, 0.8)) // 2, cy - 40), _RED, 0.8)
     return canvas

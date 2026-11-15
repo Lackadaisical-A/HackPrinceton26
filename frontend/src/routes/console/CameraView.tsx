@@ -1,25 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { getSimulator } from '../../app/runtime'
+import { getSimulator, resetAim, sendLabelCommand } from '../../app/runtime'
 import { LIMITS } from '../../config'
+import { isDefaultAim, type Aim } from '../../lib/aim'
 import { sentenceCase, signed } from '../../lib/format'
 import type { Draw } from '../../render/useCanvas'
 import { useCanvas } from '../../render/useCanvas'
 import { alertsFor, useSession, type VisionState } from '../../state/session'
 import { useSettings } from '../../state/settings'
 import { bus } from '../../telemetry/bus'
-import type { DistanceHint } from '../../telemetry/contracts'
+import type { BBox, DistanceHint } from '../../telemetry/contracts'
+import { nameProblem, normalizeName } from '../../telemetry/labels'
 import type { SimFrame } from '../../telemetry/sources/scenario'
 import { classifyVision } from '../../telemetry/vision'
 import { AlertRow } from '../../ui/AlertTag'
+import { Button } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'
 import { cx } from '../../ui/cx'
 import { IconWarning } from '../../ui/icons'
 import { Readout } from '../../ui/Readout'
+import { AimHandle } from './AimHandle'
 import { useCameraStream } from './cameraStream'
 import { CameraSourceSelector } from './CameraSourceSelector'
-import { drawOverlay, newOverlayMemory } from './overlay'
+import { drawOverlay, drawTagDraft, newOverlayMemory, type DragBox } from './overlay'
 import { drawScene } from './scene'
+import { TagBar, TagLayer, type TagBarProps } from './TagBox'
 
 const LOST: Partial<Record<VisionState, { title: string; body: string }>> = {
   degraded: { title: 'Vision feed lost', body: 'Guidance is hidden until fresh frames arrive.' },
@@ -100,6 +105,7 @@ export function CameraView() {
   const vision = useSession((s) => s.vision)
   const alerts = useSession((s) => s.alerts)
   const cameraUrl = useSettings((s) => s.cameraUrl)
+  const aim = useSettings((s) => s.aim)
   const simulated = linkState === 'simulated'
   const live = linkState === 'open' || linkState === 'connecting' || linkState === 'retrying'
 
@@ -109,22 +115,83 @@ export function CameraView() {
 
   const memory = useRef(newOverlayMemory())
   const sceneFrame = useRef<SimFrame | null>(null)
+  // The crosshair while it is being dragged or nudged, before it is saved; null otherwise.
+  const movingAim = useRef<Aim | null>(null)
+  const onAimMove = useCallback((point: Aim | null) => {
+    movingAim.current = point
+  }, [])
+
+  // Teaching a name from a drawn box. Only live vision can learn one; the simulator has no detector.
+  const [tagText, setTagText] = useState('')
+  const [drawing, setDrawing] = useState(false)
+  const [tagNote, setTagNote] = useState<TagBarProps['note']>(null)
+  const draft = useRef<DragBox | null>(null)
+  const tagName = normalizeName(tagText)
+  const tagUnavailable =
+    linkState === 'open'
+      ? null
+      : simulated
+        ? 'Tagging needs live vision: the simulator has no detector.'
+        : 'Connect to the live bridge to tag objects.'
+  const isDrawing = drawing && tagUnavailable === null
+
+  const stopDrawing = useCallback((note: TagBarProps['note']) => {
+    draft.current = null
+    setDrawing(false)
+    setTagNote(note)
+  }, [])
+
+  const startDrawing = (): void => {
+    const problem = nameProblem(tagName)
+    if (problem) {
+      setTagNote({ text: problem, problem: true })
+      return
+    }
+    setDrawing(true)
+    setTagNote({ text: `Drag a box around ${tagName} on the picture. Esc cancels.`, problem: false })
+  }
+
+  const onBox = (box: BBox | null): void => {
+    if (!box) {
+      setTagNote({ text: 'That was a click, not a box. Drag from one corner of the object to the other.', problem: true })
+      return
+    }
+    const sent = sendLabelCommand({ type: 'tag_visual', name: tagName, bbox: box })
+    stopDrawing(
+      sent
+        ? { text: `Sent. Vision answers in the caption: “Learning ${tagName}.”, then “… is ready.”`, problem: false }
+        : { text: 'Not sent: the connection dropped.', problem: true },
+    )
+  }
+
+  useEffect(() => {
+    if (!isDrawing) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      stopDrawing(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isDrawing, stopDrawing])
 
   const draw = useCallback<Draw>(
     (ctx, w, h, nowMs, dtMs) => {
       const latest = bus.latest('vision')
       const state = classifyVision(latest, bus.ageMs('vision', nowMs), Date.now() / 1000)
       const simulator = simulated ? getSimulator() : null
+      const shownAim = movingAim.current ?? aim
       if (simulator) {
         // A stalled camera keeps showing its last picture, so hold the scene still too.
         if (!simulator.visionStalled || !sceneFrame.current) sceneFrame.current = simulator.frame
-        drawScene(ctx, w, h, sceneFrame.current, state in LOST)
+        drawScene(ctx, w, h, sceneFrame.current, state in LOST, shownAim)
       } else {
         ctx.clearRect(0, 0, w, h)
       }
-      drawOverlay(ctx, w, h, latest, state === 'ok', memory.current, dtMs)
+      drawOverlay(ctx, w, h, latest, state === 'ok', memory.current, dtMs, shownAim)
+      if (draft.current) drawTagDraft(ctx, w, h, draft.current, tagName)
     },
-    [simulated],
+    [simulated, tagName, aim],
   )
   const canvas = useCanvas(draw)
 
@@ -233,8 +300,41 @@ export function CameraView() {
           {simulated && <Chip tone="window">Simulated scene</Chip>}
         </div>
       </div>
+
+      {!isDrawing && <AimHandle aim={aim} onMove={onAimMove} />}
+
+      {isDrawing && (
+        <TagLayer
+          onDrag={(box) => {
+            draft.current = box
+          }}
+          onBox={onBox}
+        />
+      )}
     </section>
-    <CameraSourceSelector url={cameraUrl} live={live} />
+    <div className="flex flex-wrap items-start gap-x-2">
+      <div className="min-w-0 flex-1 basis-80">
+        <CameraSourceSelector url={cameraUrl} live={live} />
+      </div>
+      {/* Only while the crosshair is off the centre: one click puts it back. */}
+      {!isDefaultAim(aim) && (
+        <Button size="sm" variant="quiet" className="mt-2" onClick={resetAim}>
+          Re-centre crosshair
+        </Button>
+      )}
+    </div>
+    <TagBar
+      name={tagText}
+      onName={(text) => {
+        setTagText(text)
+        if (tagNote?.problem) setTagNote(null)
+      }}
+      drawing={isDrawing}
+      onDraw={startDrawing}
+      onCancel={() => stopDrawing(null)}
+      unavailable={tagUnavailable}
+      note={tagNote}
+    />
     </>
   )
 }

@@ -4,11 +4,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .aruco import SOURCE_ARUCO, STATION_DROP
 from .config import SelectionConfig
 from .geometry import center
+from .phase import DOMAIN_OBJECTS, DOMAIN_STATION
 from .types import STATUS_LOW_CONFIDENCE, STATUS_NO_TARGET, STATUS_OK, Track
 
-_HALF_DIAGONAL = math.hypot(0.5, 0.5)  # centre-to-corner distance of the normalized frame
+_HALF_DIAGONAL = math.hypot(0.5, 0.5)  # centre-to-corner distance of the normalized frame; the off-aim scale
 
 
 @dataclass(frozen=True)
@@ -25,11 +27,21 @@ class TargetSelector:
     Acquiring needs `conf_lock`; holding only needs `conf_keep`. A rival must outscore the current
     target by `switch_margin` for `switch_dwell_s` before the target switches. If the target misses
     a frame, its last box is held for `coast_s` before it is dropped.
+
+    The domain (phase.target_domain) says what may be a target at all: in `objects`, anything the object
+    detector found (never a station marker), narrowed by the preferred label; in `station`, only the drop
+    station's marker. The pick station is never a target. Status counts candidates of the domain only, so a cup
+    in view during carry is `no_target`, not `low_confidence`.
+
+    `center_weight` favours objects near the aim point (the gripper's place in the picture, guidance.aim), which is
+    the frame centre unless `set_aim` moves it.
     """
 
-    def __init__(self, cfg: SelectionConfig):
+    def __init__(self, cfg: SelectionConfig, aim: tuple[float, float] = (0.5, 0.5)):
         self._cfg = cfg
         self._preferred = cfg.preferred_label
+        self._aim = (float(aim[0]), float(aim[1]))
+        self.domain = DOMAIN_OBJECTS
         self.reset()
 
     def reset(self) -> None:
@@ -38,20 +50,46 @@ class TargetSelector:
         self._rival_id: int | None = None
         self._rival_since = 0.0
 
+    def set_domain(self, domain: str) -> bool:
+        """Switch what may be targeted. A change drops the current target, so it is re-selected in the new domain
+        on this very frame and the old one is never published under the new phase. True if it changed."""
+        if domain not in (DOMAIN_OBJECTS, DOMAIN_STATION):
+            raise ValueError(f"unknown target domain {domain!r}")
+        if domain == self.domain:
+            return False
+        self.domain = domain
+        self.reset()
+        return True
+
     def set_preferred_label(self, label: str | None) -> None:
-        """Restrict the target to one label (None = any). Hook for the M2 `select_target` command."""
+        """Restrict the object target to one label (None = any). Hook for the `select_target` command.
+
+        Stations are not affected: the preference is kept and applies again once objects are targeted."""
         self._preferred = label
-        if label is not None and self._current is not None and self._current.label != label:
+        if (self.domain == DOMAIN_OBJECTS and label is not None and self._current is not None
+                and self._current.label != label):
             self.reset()
+
+    def set_aim(self, x: float, y: float) -> None:
+        """Score candidates by their distance from (x, y). The current target is kept: moving the crosshair is
+        not a reason to drop what is being steered to; a rival still has to win by the margin and the dwell."""
+        self._aim = (float(x), float(y))
+
+    def candidates(self, tracks: list[Track]) -> list[Track]:
+        """The tracks that may be the target in the current domain."""
+        if self.domain == DOMAIN_STATION:
+            return [tr for tr in tracks if tr.source == SOURCE_ARUCO and tr.label == STATION_DROP]
+        return [tr for tr in tracks
+                if tr.source != SOURCE_ARUCO and (self._preferred is None or tr.label == self._preferred)]
 
     def score(self, track: Track) -> float:
         cx, cy = center(track.bbox)
-        off_center = min(1.0, math.hypot(cx - 0.5, cy - 0.5) / _HALF_DIAGONAL)
-        return track.confidence * (1.0 - self._cfg.center_weight * off_center)
+        off_aim = min(1.0, math.hypot(cx - self._aim[0], cy - self._aim[1]) / _HALF_DIAGONAL)
+        return track.confidence * (1.0 - self._cfg.center_weight * off_aim)
 
     def update(self, tracks: list[Track], t: float) -> Selection:
         cfg = self._cfg
-        candidates = [tr for tr in tracks if self._preferred is None or tr.label == self._preferred]
+        candidates = self.candidates(tracks)
         lockable = [tr for tr in candidates if tr.confidence >= cfg.conf_lock]
 
         if self._current is not None:

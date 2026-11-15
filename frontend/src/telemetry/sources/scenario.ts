@@ -1,4 +1,5 @@
-import { DETECTOR_CLASSES } from '../../config'
+import { AIM_DEFAULT, DETECTOR_CLASSES } from '../../config'
+import type { Aim } from '../../lib/aim'
 import { clamp, lerp, smoothstep } from '../../lib/math'
 import type { BBox, DistanceHint, Phase, VisionStatus } from '../contracts'
 
@@ -104,6 +105,11 @@ export interface ScenarioOptions {
   preferred?: string | null
   /** Seconds since an operator-triggered squeeze, or null. Used by the Signals test switch. */
   sinceSqueezeS?: number | null
+  /**
+   * Where the gripper shows in the picture (`set_aim`). The operator steers the object there, and dx, dy are measured
+   * from it, as vision measures them. Default: the frame centre.
+   */
+  aim?: Aim
 }
 
 export function scenarioAt(time: number, options: ScenarioOptions = {}): SimFrame {
@@ -111,6 +117,7 @@ export function scenarioAt(time: number, options: ScenarioOptions = {}): SimFram
   const t = time - cycle * CYCLE_S
   const label = options.preferred ?? DETECTOR_CLASSES[cycle % DETECTOR_CLASSES.length]
   const phase = phaseAt(t)
+  const { x: ax, y: ay } = options.aim ?? AIM_DEFAULT
 
   // --- Where the object sits in the wrist view -------------------------------------------------
   let cx = 0
@@ -132,22 +139,22 @@ export function scenarioAt(time: number, options: ScenarioOptions = {}): SimFram
     // The operator steers toward it. The wobble is their hand, and it settles as they close in.
     const p = smoothstep((t - 2.8) / 7.6)
     const loose = (1 - p) ** 0.8
-    cx = lerp(0.22, 0.5, p) + loose * (0.07 * Math.sin(1.9 * time) + 0.03 * Math.sin(4.3 * time + 1))
-    cy = lerp(0.34, 0.53, p) + loose * (0.05 * Math.sin(1.4 * time + 2) + 0.02 * Math.sin(3.7 * time))
+    cx = lerp(0.22, ax, p) + loose * (0.07 * Math.sin(1.9 * time) + 0.03 * Math.sin(4.3 * time + 1))
+    cy = lerp(0.34, ay + 0.03, p) + loose * (0.05 * Math.sin(1.4 * time + 2) + 0.02 * Math.sin(3.7 * time))
     area = lerp(0.016, 0.26, p ** 1.6)
     confidence = lerp(0.52, 0.93, p) + 0.015 * Math.sin(7.1 * time)
   } else if (t < 28.5) {
-    // In the gripper: large, centred, moving a little with the hand.
-    cx = 0.5 + 0.01 * Math.sin(2.1 * time)
-    cy = 0.55 + 0.008 * Math.sin(2.9 * time)
+    // In the gripper: large, between the jaws, moving a little with the hand.
+    cx = ax + 0.01 * Math.sin(2.1 * time)
+    cy = ay + 0.05 + 0.008 * Math.sin(2.9 * time)
     area = lerp(0.26, 0.3, smoothstep((t - 11) / 2))
     confidence = 0.92 + 0.015 * Math.sin(5.3 * time)
   } else if (t < PHASE_STARTS.search) {
     // Set down. The arm backs away, then pans off toward the next object.
     const back = smoothstep((t - 28.5) / 1.5)
     const away = smoothstep((t - 30) / 1.6)
-    cx = lerp(0.5, 0.46, back) + away * 0.62
-    cy = lerp(0.55, 0.6, back)
+    cx = lerp(ax, ax - 0.04, back) + away * 0.62
+    cy = lerp(ay + 0.05, ay + 0.1, back)
     area = lerp(0.3, 0.07, back) * (1 - 0.5 * away)
     confidence = lerp(0.92, 0.6, away)
   } else {
@@ -156,8 +163,8 @@ export function scenarioAt(time: number, options: ScenarioOptions = {}): SimFram
 
   const box = visible ? boxAround(cx, cy, area, label) : null
   const status: VisionStatus = !box ? 'no_target' : t >= 2 && t < 2.8 ? 'low_confidence' : 'ok'
-  const dx = box ? clamp(((box[0] + box[2]) / 2 - 0.5) * 2, -1, 1) : 0
-  const dy = box ? clamp(((box[1] + box[3]) / 2 - 0.5) * 2, -1, 1) : 0
+  const dx = box ? clamp(((box[0] + box[2]) / 2 - ax) * 2, -1, 1) : 0
+  const dy = box ? clamp(((box[1] + box[3]) / 2 - ay) * 2, -1, 1) : 0
   const distance: DistanceHint = area >= 0.2 ? 'in_reach' : area >= 0.05 ? 'near' : 'far'
 
   // --- Gripper and grip ------------------------------------------------------------------------

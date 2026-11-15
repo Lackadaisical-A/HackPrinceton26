@@ -5,8 +5,8 @@ import sys
 
 import pytest
 
-from leslider_control.session import (ROOT, controller_argv, ensure_service, listening, parse_args,
-                                     session_config)
+from leslider_control.session import (ROOT, bridge_commands_endpoint, controller_argv, ensure_service,
+                                     listening, parse_args, session_config)
 
 
 def test_default_matches_working_command_and_dry_run_is_forwarded():
@@ -33,7 +33,15 @@ def test_generated_config_preserves_model_location_and_gpu_selection():
     cfg = session_config(path, 18766)
     assert cfg["stream"]["port"] == 18766
     assert Path(cfg["detector"]["models_dir"]).is_absolute()
+    # Otherwise every launcher session starts with an empty label library in its own run folder.
+    assert Path(cfg["labels"]["dir"]) == (ROOT / "computer_vision" / "labels").resolve()
     assert path.read_bytes() == before
+
+
+def test_bridge_binds_first_command_endpoint_from_list_or_string():
+    cfg = session_config(ROOT / "computer_vision" / "config.yaml", 18766)
+    assert bridge_commands_endpoint(cfg) == "tcp://127.0.0.1:5557"
+    assert bridge_commands_endpoint({"transport": {"command_sub": "tcp://127.0.0.1:5557"}}) == "tcp://127.0.0.1:5557"
 
 
 def test_services_started_by_launcher_are_stopped_on_controller_failure(tmp_path):

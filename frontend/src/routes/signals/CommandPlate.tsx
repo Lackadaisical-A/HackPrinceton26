@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { selectTarget, sendCommand } from '../../app/runtime'
-import { DETECTOR_CLASSES } from '../../config'
+import { selectTarget, sendCommand, sendLabelCommand, type LabelCommand } from '../../app/runtime'
+import { DETECTOR_CLASSES, LABEL_LIMITS } from '../../config'
 import { sentenceCase, timeOfDay } from '../../lib/format'
 import { useSession } from '../../state/session'
 import type { Command, Phase } from '../../telemetry/contracts'
 import { COMMAND_TOPIC, encodeFrame, PHASES } from '../../telemetry/contracts'
+import { nameProblem, normalizeName } from '../../telemetry/labels'
 import { AlertTag } from '../../ui/AlertTag'
 import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/Field'
 import { Plate } from '../../ui/Plate'
 import { Segmented } from '../../ui/Segmented'
 
@@ -36,7 +38,9 @@ function Result({ outcome }: { outcome: Outcome | null }) {
       {!outcome.sent && <AlertTag level="caution" text="Not sent" />}
       <p>
         {!outcome.sent
-          ? 'There is no connection. Connect to the bridge or use simulated data, then send the command again. The frame would have been:'
+          ? outcome.simulated
+            ? 'The simulator has no detector, so it cannot learn or forget names. Over the bridge, the frame would be:'
+            : 'There is no connection. Connect to the bridge or use simulated data, then send the command again. The frame would have been:'
           : outcome.simulated
             ? `The simulator applied this command at ${timeOfDay(outcome.at)}. Over the bridge, the frame would be:`
             : `Sent at ${timeOfDay(outcome.at)} as this frame:`}
@@ -50,14 +54,18 @@ export function CommandPlate() {
   const [target, setTarget] = useState<string>(ANY)
   const [phase, setPhase] = useState<Phase>('search')
   const [outcome, setOutcome] = useState<Outcome | null>(null)
+  const [nameText, setNameText] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const name = normalizeName(nameText)
+  const problem = nameProblem(name)
 
   const report = (command: Command, sent: boolean, simulated: boolean): void => {
     const at = Date.now()
     setOutcome({ frame: encodeFrame(COMMAND_TOPIC, { t: at / 1000, ...command }), sent, simulated, at })
   }
 
-  const sendTarget = (): void => {
-    const label = target === ANY ? null : target
+  /** Selects a label through selectTarget, which logs exactly one event, and reports whether it went out. */
+  const sendSelect = (label: string | null): void => {
     const session = useSession.getState()
     const simulated = session.link.state === 'simulated'
     // selectTarget logs exactly one event: with a caution level when the command could not be sent.
@@ -67,6 +75,15 @@ export function CommandPlate() {
     const sent = logged !== undefined && logged.id !== before && logged.level === undefined
     report(label ? { type: 'select_target', label } : { type: 'clear_target' }, sent, simulated)
   }
+
+  const sendTarget = (): void => sendSelect(target === ANY ? null : target)
+
+  const sendLabel = (command: LabelCommand): void => {
+    const simulated = useSession.getState().link.state === 'simulated'
+    report(command, sendLabelCommand(command), simulated)
+  }
+
+  const description = prompt.trim()
 
   const sendPhase = (): void => {
     const session = useSession.getState()
@@ -97,12 +114,59 @@ export function CommandPlate() {
           <Button onClick={sendPhase}>Send phase</Button>
         </div>
 
+        <div className="flex flex-col items-start gap-2">
+          <span className="text-sm font-medium text-ink" aria-hidden="true">
+            Names
+          </span>
+          <p className="max-w-[62ch] text-xs text-ink-3">
+            Teach vision a name for an object, then select it as the target. Vision answers in the caption: first
+            “Learning my flask.”, then “My flask is ready.” 10 to 25 s later, or the reason it refused. To teach from a
+            box you draw, use Tag box under the camera on the Console.
+          </p>
+          <div className="grid w-full max-w-xl gap-3 sm:grid-cols-2">
+            <TextField
+              label="Name"
+              value={nameText}
+              onChange={(event) => setNameText(event.target.value)}
+              placeholder="my flask"
+              error={nameText.trim() && problem ? problem : null}
+            />
+            <TextField
+              label="Description (optional)"
+              help="Only for Tag by description. Empty: the name is the description."
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              maxLength={LABEL_LIMITS.promptChars}
+              placeholder="small orange pill bottle"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={problem !== null} onClick={() => sendLabel({ type: 'tag_visual', name, bbox: null })}>
+              Tag locked target
+            </Button>
+            <Button
+              disabled={problem !== null}
+              onClick={() =>
+                sendLabel(description ? { type: 'tag_text', name, prompt: description } : { type: 'tag_text', name })
+              }
+            >
+              Tag by description
+            </Button>
+            <Button disabled={problem !== null} onClick={() => sendSelect(name)}>
+              Select
+            </Button>
+            <Button variant="danger" disabled={problem !== null} onClick={() => sendLabel({ type: 'untag', name })}>
+              Forget
+            </Button>
+          </div>
+        </div>
+
         <div role="status" className="border-t border-rule pt-3">
           <Result outcome={outcome} />
         </div>
 
         <p className="max-w-[62ch] text-xs text-ink-3">
-          Target and phase commands are part of the vision contract. The haptics switch on the console sends{' '}
+          Target, phase and name commands are part of the vision contract. The haptics switch on the console sends{' '}
           <span className="num">set_haptics</span>, which is a proposed command: nothing on the Python side handles it
           yet.
         </p>

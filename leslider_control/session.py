@@ -130,9 +130,18 @@ def ensure_service(stack, kind, port, command, cwd, log_dir):
 def session_config(config_path, stream_port):
     config_path = config_path.resolve()
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    cfg["detector"]["models_dir"] = str((config_path.parent / cfg["detector"]["models_dir"]).resolve())
+    # The copy is written to runs/pot-test/<time>/, and vision resolves relative paths against the config file's
+    # folder, so keep the models and the operator's label library where the source config points.
+    for section, key in (("detector", "models_dir"), ("labels", "dir")):
+        cfg[section][key] = str((config_path.parent / cfg[section][key]).resolve())
     cfg["stream"].update(enabled=True, host="127.0.0.1", port=stream_port)
     return cfg
+
+
+def bridge_commands_endpoint(cfg):
+    """The bridge binds the first command endpoint; vision also listens on the others (voice, send_command)."""
+    endpoints = cfg["transport"]["command_sub"]
+    return endpoints[0] if isinstance(endpoints, list) else endpoints
 
 
 def controller_argv(args):
@@ -189,7 +198,7 @@ def main(argv=None):
     try:
         with ExitStack() as stack:
             bridge_command = [sys.executable, "-u", "-m", "paul_bridge", "--listen", f"127.0.0.1:{args.bridge_port}",
-                              "--commands", cfg["transport"]["command_sub"]]
+                              "--commands", bridge_commands_endpoint(cfg)]
             for endpoint in [cfg["transport"]["vision_pub"], cfg["transport"]["pressure_sub"],
                              f"tcp://127.0.0.1:{args.robot_pub_port}"]:
                 bridge_command += ["--from", endpoint]

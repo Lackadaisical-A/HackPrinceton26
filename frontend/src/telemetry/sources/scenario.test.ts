@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DETECTOR_CLASSES, JOINTS, LIMITS } from '../../config'
+import { AIM_DEFAULT, AIM_LIMIT, DEADZONE, DETECTOR_CLASSES, JOINTS, LIMITS } from '../../config'
 import { PHASES } from '../contracts'
 import type { Phase } from '../contracts'
 import { CYCLE_S, PHASE_STARTS, scenarioAt, SQUEEZE_AT_S, summaryFor } from './scenario'
@@ -220,6 +220,46 @@ describe('scenarioAt', () => {
     // Tens of thousands of checks: 1.6 s on an idle computer, over the default 5 s while vision is
     // running on it.
   }, 30_000)
+})
+
+describe('scenarioAt with a moved crosshair', () => {
+  const aim = { x: 0.62, y: 0.58 }
+
+  it('steers the object to the crosshair, wherever it is', () => {
+    for (const time of [12, 16, 20, 24, 28]) {
+      const frame = scenarioAt(time, { aim })
+      const at = `time = ${time}`
+      expect(frame.status, at).toBe('ok')
+      expect(Math.hypot(frame.dx, frame.dy), at).toBeLessThanOrEqual(DEADZONE.exit)
+      const [x1, y1, x2, y2] = frame.box!
+      expect((x1 + x2) / 2, at).toBeCloseTo(aim.x, 1)
+      expect((y1 + y2) / 2, at).toBeGreaterThan(aim.y)
+    }
+  })
+
+  it('measures the offset from the crosshair, not the picture centre', () => {
+    const frame = scenarioAt(20, { aim })
+    const [x1, y1, x2, y2] = frame.box!
+    expect(frame.dx).toBeCloseTo(((x1 + x2) / 2 - aim.x) * 2, 6)
+    expect(frame.dy).toBeCloseTo(((y1 + y2) / 2 - aim.y) * 2, 6)
+  })
+
+  it('gives the same frames with the default crosshair as with none', () => {
+    for (const time of [3, 7.5, 12, 20, 29.4, 31]) {
+      expect(scenarioAt(time, { aim: AIM_DEFAULT })).toEqual(scenarioAt(time))
+    }
+  })
+
+  it('keeps the box inside the picture with the crosshair at the edge', () => {
+    for (const corner of [AIM_LIMIT, 1 - AIM_LIMIT]) {
+      for (const time of instants(0, 0.1)) {
+        const box = scenarioAt(time, { aim: { x: corner, y: corner } }).box
+        if (!box) continue
+        expect(Math.min(...box), `time = ${time}`).toBeGreaterThanOrEqual(0)
+        expect(Math.max(...box), `time = ${time}`).toBeLessThanOrEqual(1)
+      }
+    }
+  })
 })
 
 describe('summaryFor', () => {

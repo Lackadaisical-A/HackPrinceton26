@@ -1,7 +1,8 @@
-import { DEADZONE, LIMITS } from '../../config'
+import { AIM_DEFAULT, DEADZONE, LIMITS } from '../../config'
+import type { Aim } from '../../lib/aim'
 import { clamp, quatFromEuler } from '../../lib/math'
 import type { TelemetryBus } from '../bus'
-import type { Command, HapticCue, Topic, VisionMessage } from '../contracts'
+import type { Command, HapticCue, Phase, Topic, VisionMessage } from '../contracts'
 import { TOPIC_INFO, TOPICS } from '../contracts'
 import { CYCLE_S, PHASE_STARTS, scenarioAt, summaryFor, type SimFrame } from './scenario'
 import type { Source } from './types'
@@ -30,9 +31,12 @@ export class Simulator implements Source {
   private readonly due = Object.fromEntries(TOPICS.map((t) => [t, 0])) as Record<Topic, number>
 
   private preferred: string | null = null
+  private aim: Aim = { ...AIM_DEFAULT }
   private hapticsEnabled = true
   private aligned = false
   private frameId = 0
+  /** What the watchdog's heartbeat repeats, as vision's does. */
+  private lastPhase: Phase = 'search'
   private lastSummary = ''
   private lastSummaryS = -SUMMARY_GAP_S
   private hadTarget = false
@@ -74,6 +78,19 @@ export class Simulator implements Source {
       case 'set_phase':
         this.jumpTo(PHASE_STARTS[command.phase])
         break
+      case 'set_aim': {
+        // As vision does: a point off the picture is refused, not guessed at.
+        const inside = (v: number) => Number.isFinite(v) && v >= 0 && v <= 1
+        if (!inside(command.x) || !inside(command.y)) return false
+        this.aim = { x: command.x, y: command.y }
+        this.aligned = false // earned again from the new point, as vision's smoothing starts over
+        break
+      }
+      case 'tag_visual':
+      case 'tag_text':
+      case 'untag':
+        // The scripted scene has no detector to teach, so say the command was not taken rather than applied.
+        return false
     }
     return true
   }
@@ -115,7 +132,7 @@ export class Simulator implements Source {
     const time = (nowMs - this.originMs) / 1000
     const sinceSqueezeS = this.squeezeAtMs === null ? null : (nowMs - this.squeezeAtMs) / 1000
     if (sinceSqueezeS !== null && sinceSqueezeS > 3) this.squeezeAtMs = null
-    const frame = scenarioAt(time, { preferred: this.preferred, sinceSqueezeS })
+    const frame = scenarioAt(time, { preferred: this.preferred, sinceSqueezeS, aim: this.aim })
     this.frame = frame
 
     const offset = Math.hypot(frame.dx, frame.dy)
@@ -182,10 +199,11 @@ export class Simulator implements Source {
         t: round(wall, 3),
         frame_id: this.frameId,
         status: 'degraded',
-        phase: 'search',
+        phase: this.lastPhase,
         target: null,
         guidance: null,
         summary: beatsDue === 1 ? 'Vision feed lost.' : null,
+        alert: null,
       }
     }
 
@@ -205,6 +223,7 @@ export class Simulator implements Source {
     }
     if (ok) this.hadTarget = true
     else if (frame.status === 'no_target' && summary === 'Target lost.') this.hadTarget = false
+    this.lastPhase = frame.phase
 
     return {
       t,
@@ -224,6 +243,7 @@ export class Simulator implements Source {
         ? { dx: round(frame.dx, 3), dy: round(frame.dy, 3), distance_hint: frame.distance, aligned: this.aligned }
         : null,
       summary,
+      alert: null,
     }
   }
 

@@ -7,7 +7,7 @@ from conftest import box, track
 from paul_vision.config import DistanceConfig, DistanceThresholds, GuidanceConfig
 from paul_vision.guidance import GuidanceFilter, classify_distance, raw_offset, schmitt_level
 
-GUIDANCE = GuidanceConfig(smoothing_tau_s=0.12, deadzone_enter=0.10, deadzone_exit=0.14)
+GUIDANCE = GuidanceConfig(smoothing_tau_s=0.12, deadzone_enter=0.10, deadzone_exit=0.14, aim=[0.5, 0.5])
 NO_SMOOTHING = dataclasses.replace(GUIDANCE, smoothing_tau_s=0.0)
 THRESHOLDS = DistanceThresholds(near=0.05, in_reach=0.20)
 DISTANCE = DistanceConfig(hysteresis=0.15, thresholds={
@@ -38,6 +38,34 @@ def test_raw_offset_sign_and_scale(cx, cy, dx, dy):
 
 def test_raw_offset_is_clamped():
     assert raw_offset((1.2, -0.4, 1.4, -0.2)) == (1.0, -1.0)
+
+
+@pytest.mark.parametrize("cx, cy, dx, dy", [
+    (0.6, 0.7, 0.0, 0.0),     # on the aim point: no offset, wherever it is in the frame
+    (0.5, 0.5, -0.2, -0.4),   # the frame centre is up and left of this aim
+    (0.85, 0.7, 0.5, 0.0),
+    (0.0, 1.0, -1.0, 0.6),    # clamped on x only
+])
+def test_raw_offset_is_measured_from_the_aim_point(cx, cy, dx, dy):
+    assert raw_offset(box(cx, cy), (0.6, 0.7)) == pytest.approx((dx, dy))
+
+
+def test_the_filter_measures_from_the_configured_aim():
+    cfg = dataclasses.replace(NO_SMOOTHING, aim=[0.6, 0.7])
+    g = GuidanceFilter(cfg, DISTANCE).update(track(cx=0.6, cy=0.72), t=0.0)
+    assert (g.dx, g.dy) == pytest.approx((0.0, 0.04))
+    assert g.aligned
+
+
+def test_set_aim_moves_the_reference_and_restarts_the_smoothing():
+    filt = GuidanceFilter(GUIDANCE, DISTANCE)
+    filt.update(track(cx=0.7, cy=0.6), t=0.0)
+    assert not filt.update(track(cx=0.7, cy=0.6), t=0.03).aligned
+    filt.set_aim(0.7, 0.6)
+    g = filt.update(track(cx=0.7, cy=0.6), t=0.06)
+    assert filt.aim == (0.7, 0.6)
+    assert (g.dx, g.dy) == pytest.approx((0.0, 0.0))  # jumped to the new reference, not glided there
+    assert g.aligned
 
 
 # --- smoothing ---

@@ -1,3 +1,5 @@
+import { AIM_DEFAULT } from '../config'
+import { clampAim, describeAim, sameAim } from '../lib/aim'
 import { fileStamp, downloadText } from '../lib/format'
 import { useSession } from '../state/session'
 import { useSettings } from '../state/settings'
@@ -19,6 +21,8 @@ export const recorder = new Recorder(bus)
 
 let source: Source | null = null
 let simulator: Simulator | null = null
+/** When the last vision message arrived, or null when none has since the source was (re)started. */
+let lastVisionMs: number | null = null
 
 /** The running simulator, or null when live data is in use. */
 export const getSimulator = (): Simulator | null => simulator
@@ -34,6 +38,7 @@ export function connect(): void {
   simulator = null
   bus.reset()
   session.resetStreams()
+  lastVisionMs = null
 
   if (kind === 'simulator') {
     simulator = new Simulator(bus)
@@ -41,6 +46,7 @@ export function connect(): void {
     session.setLink({ state: 'simulated', detail: null, retryAt: null })
     // Carry the haptics setting over, so the switch and the simulator agree.
     simulator.send({ type: 'set_haptics', enabled: session.haptics })
+    simulator.send({ type: 'set_aim', ...useSettings.getState().aim })
     simulator.start()
     session.log('link', 'Simulator started')
     return
@@ -70,6 +76,7 @@ export function disconnect(): void {
   simulator = null
   bus.reset()
   session.resetStreams()
+  lastVisionMs = null
   session.setLink({ state: 'idle', detail: null, retryAt: null })
   session.log('link', 'Disconnected')
 }
@@ -112,6 +119,70 @@ export function selectTarget(label: string | null): void {
   }
   session.setTargetLabel(label)
   session.log('command', label ? `Target set to ${label}` : 'Target set to any object')
+}
+
+export type LabelCommand = Extract<Command, { type: 'tag_visual' | 'tag_text' | 'untag' }>
+
+function describeLabelCommand(command: LabelCommand): string {
+  switch (command.type) {
+    case 'untag':
+      return `Forget ${command.name}`
+    case 'tag_text':
+      return `Teach ${command.name} from a description`
+    case 'tag_visual':
+      return `Teach ${command.name} from ${command.bbox ? 'a drawn box' : 'the locked target'}`
+  }
+}
+
+/**
+ * Sends a command to vision's label library and logs it. Vision answers in `summary` ("Learning my flask.",
+ * then "My flask is ready." or why it refused), which the console shows as a caption.
+ * @returns whether the command went out
+ */
+export function sendLabelCommand(command: LabelCommand): boolean {
+  const session = useSession.getState()
+  const sent = sendCommand(command)
+  const what = describeLabelCommand(command)
+  if (sent) session.log('command', `${what}: sent`)
+  else if (session.link.state === 'simulated') session.log('command', `${what}: the simulator cannot learn names`, 'caution')
+  else session.log('command', `${what}: not sent, no connection`, 'caution')
+  return sent
+}
+
+// --- Crosshair (aim point) ---------------------------------------------------------------------
+
+/** A gap in vision messages longer than this means vision may have restarted with its configured aim. */
+const AIM_RESYNC_GAP_MS = 2000
+
+/**
+ * Moves the gripper crosshair: saves the point, then tells vision to measure guidance from it.
+ * The saved point is the one in force; when nothing is connected it goes out on the next connection.
+ */
+export function setAim(x: number, y: number): void {
+  const aim = clampAim({ x, y })
+  const settings = useSettings.getState()
+  if (sameAim(aim, settings.aim)) return
+  settings.update({ aim })
+  const session = useSession.getState()
+  if (sendCommand({ type: 'set_aim', ...aim })) session.log('command', `Crosshair moved to ${describeAim(aim)}`)
+  else session.log('command', `Crosshair moved to ${describeAim(aim)}; sent to vision once connected`, 'caution')
+}
+
+export const resetAim = (): void => setAim(AIM_DEFAULT.x, AIM_DEFAULT.y)
+
+/**
+ * Keeps vision's aim point equal to the saved one. Vision starts from its own config, so the saved point is
+ * sent again with the first vision message after connecting, and after a gap long enough for vision to have
+ * restarted behind a bridge that stayed up. The simulator is given the point in `connect()` instead.
+ */
+export function startAimSync(): () => void {
+  return bus.on('vision', (_message, receivedMs) => {
+    const previous = lastVisionMs
+    lastVisionMs = receivedMs
+    if (simulator !== null || (previous !== null && receivedMs - previous <= AIM_RESYNC_GAP_MS)) return
+    // Sent even when it is the default: vision may still hold a point from an earlier session.
+    sendCommand({ type: 'set_aim', ...useSettings.getState().aim })
+  })
 }
 
 export function toggleSpeak(): void {

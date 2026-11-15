@@ -1,4 +1,5 @@
 import { DEADZONE } from '../../config'
+import type { Aim } from '../../lib/aim'
 import { prefersReducedMotion } from '../../render/scheduler'
 import { FONT_SANS } from '../../render/theme'
 import type { BBox, VisionMessage } from '../../telemetry/contracts'
@@ -35,6 +36,8 @@ function ink(ctx: CanvasRenderingContext2D, width: number, alpha: number, trace:
 
 /**
  * @param usable true only when guidance may be shown (status "ok" and fresh)
+ * @param aim where the gripper shows in the picture: the crosshair and the aligned zone are drawn there, as vision
+ *   measures guidance from it (`set_aim`)
  */
 export function drawOverlay(
   ctx: CanvasRenderingContext2D,
@@ -44,9 +47,10 @@ export function drawOverlay(
   usable: boolean,
   memory: OverlayMemory,
   dtMs: number,
+  aim: Aim,
 ): void {
-  const cx = w / 2
-  const cy = h / 2
+  const cx = aim.x * w
+  const cy = aim.y * h
   const target = usable ? (message?.target ?? null) : null
   const guidance = usable ? (message?.guidance ?? null) : null
   const aligned = guidance?.aligned ?? false
@@ -56,7 +60,7 @@ export function drawOverlay(
   ctx.lineJoin = 'round'
   ctx.setLineDash([])
 
-  // The gripper's centre line, and the zone inside which the target counts as aligned.
+  // The gripper's aim point, and the zone inside which the target counts as aligned.
   const rx = (w * DEADZONE.enter) / 2
   const ry = (h * DEADZONE.enter) / 2
   if (!aligned) ctx.setLineDash([3, 5])
@@ -150,8 +154,11 @@ export function drawOverlay(
     ctx.fill()
   }
 
-  // The label rides on the box's top edge, or inside it when the box touches the frame's top.
-  const text = `${target.label}  ${target.confidence.toFixed(2)}`
+  drawTag(ctx, w, `${target.label}  ${target.confidence.toFixed(2)}`, x1, y1)
+}
+
+/** A box's label: on its top edge, or inside it when the box touches the frame's top. */
+function drawTag(ctx: CanvasRenderingContext2D, w: number, text: string, x1: number, y1: number): void {
   ctx.font = `600 12px ${FONT_SANS}`
   const tagW = ctx.measureText(text).width + 12
   const tagH = 20
@@ -165,4 +172,26 @@ export function drawOverlay(
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
   ctx.fillText(text, tagX + 6, tagY + tagH / 2 + 0.5)
+}
+
+/** Two corners of a box being dragged, in fractions of the picture, in the order the pointer gave them. */
+export interface DragBox {
+  ax: number
+  ay: number
+  bx: number
+  by: number
+}
+
+/** The box the operator is drawing to teach vision a name. Dashed, so it never reads as a detection. */
+export function drawTagDraft(ctx: CanvasRenderingContext2D, w: number, h: number, box: DragBox, name: string): void {
+  const x1 = Math.min(box.ax, box.bx) * w
+  const y1 = Math.min(box.ay, box.by) * h
+  const x2 = Math.max(box.ax, box.bx) * w
+  const y2 = Math.max(box.ay, box.by) * h
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.setLineDash([6, 4])
+  ink(ctx, 2, 1, () => ctx.rect(x1, y1, x2 - x1, y2 - y1))
+  ctx.setLineDash([])
+  if (name) drawTag(ctx, w, name, x1, y1)
 }

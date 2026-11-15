@@ -46,6 +46,62 @@ detector:
   agnostic_nms: true        # one box per object even if two labels fit
   models_dir: models        # relative to this file; weights and baked artifacts live here
 
+# Names the operator teaches while vision runs (M4): tag_visual, tag_text and untag on the `command` topic.
+# The library is <dir>/library.json plus the prompt embeddings and the reference pictures. It holds camera
+# images, so it is not in git.
+labels:
+  dir: labels               # relative to this file, like detector.models_dir
+  max_tags: 20              # most names the library holds
+  # Each tag_visual or tag_text adds one view (a picture or a prompt) to its name; each view is one more class in
+  # the model, so the detector slows down a little with every view.
+  max_views: 5
+  max_name_chars: 40        # longest name, counted after normalizing (lower case, single spaces)
+  max_prompt_chars: 100     # longest tag_text prompt
+  # tag_visual with a drawn box: if it overlaps an object vision is tracking by at least this IoU, that object's
+  # own box is used instead (it is tighter, and a loose box teaches the background: 50 % too loose matched nothing).
+  snap_iou: 0.5
+  # A box closer than this to an edge of the picture (fraction of the frame) may show only part of the object, and
+  # a cut-off view matched nothing in tests: refused.
+  border_margin: 0.01
+  min_box_side: 0.04        # each side of the box must be at least this fraction of the frame's side
+  # The label change runs in a child process (python -m paul_vision.label_worker). Measured on the dev laptop on
+  # 14 November 2026: 7.2 s for PyTorch on the CPU, 13.0 to 13.8 s for OpenVINO on the Intel GPU (with the export).
+  # Past this it is killed and reported.
+  worker_timeout_s: 120
+  # Torch threads the child may use on the CPU; the frame loop keeps the rest. It also runs at low priority.
+  worker_threads: 2
+  # OpenVINO only: loading and compiling the new export on a thread while the old model serves. Measured 2.3 to 31 s
+  # on the Intel GPU. Past this the change is reported as failed (the thread cannot be stopped; vision stays busy
+  # for label changes until it ends).
+  load_timeout_s: 90
+
+# Printed ArUco markers on the pick and drop-off stations (paul_vision/aruco.py). Print them with
+# `uv run python scripts/make_markers.py`; reprint after changing the dictionary or an id.
+stations:
+  enabled: true
+  dictionary: DICT_4X4_50   # cv2.aruco DICT_<n>X<n>_<count>; 4x4 cells read from furthest away
+  # The two codes furthest from what scenes produce: in 17,501 marker-free frames of sample_videos/ and
+  # recordings/ neither was ever read, while ids 17 and 37 were. Avoid 0..3, the ids most people print.
+  pick_id: 9                # marker on the pick station
+  drop_id: 15               # marker on the drop-off station
+  # Markers whose mean side is shorter than this fraction of the frame's longer side are ignored
+  # (0.03 = 38 px at 1280x720). Below that, reads fail under blur anyway, and 7 of the 10 false reads
+  # of any id on the clips were smaller.
+  min_side: 0.03
+  # Shortest side / longest side of the marker as seen. 42 of the 46 scene quads that came within 2 bits
+  # of a station code were thinner than 0.40; a printed marker only gets that thin when seen more than
+  # about 65 degrees off face-on. 0.30 reads a third more of those slanted views and lets 4 more quads by.
+  min_side_ratio: 0.40
+  # Markers are searched in a grayscale copy whose longer side is at most this many pixels (0 = full size).
+  # Full size costs 4-5 ms a frame (p95 7.5 ms); 960 saves about 1 ms but needs markers 1.5 times
+  # bigger when seen at a slant.
+  detect_max_px: 1280
+  # OpenCV rates each read by the share of cell pixels that agree with the decoded bits. Real reads of
+  # markers above min_side measured 0.80 or more; false reads scored 0.77 to 0.94, so this floor only
+  # drops broken reads. The other filters are what keep false stations out.
+  min_confidence: 0.75
+  error_correction_rate: 0.0  # share of the dictionary's correctable bits that may be wrong (0 = exact match)
+
 tracker:
   iou_min: 0.3              # minimum IoU to continue a track
   center_dist_max: 0.15     # fallback match: max centre distance (normalized) when IoU fails
@@ -58,7 +114,7 @@ tracker:
 selection:
   conf_lock: 0.40           # confidence needed to acquire a target
   conf_keep: 0.25           # confidence needed to keep the current target
-  center_weight: 1.0        # score = confidence x (1 - center_weight x distance from centre); 0 = confidence only
+  center_weight: 1.0        # score = confidence x (1 - center_weight x distance from guidance.aim); 0 = confidence only
   switch_margin: 0.25       # a rival must score this fraction higher than the current target...
   switch_dwell_s: 0.5       # ...continuously for this long before the target switches
   coast_s: 0.15             # hold the last guidance this long when the target misses a frame (0 = off)
@@ -68,13 +124,26 @@ guidance:
   smoothing_tau_s: 0.12     # EMA time constant for dx, dy and box area (0 = no smoothing)
   deadzone_enter: 0.10      # |offset| at or below this turns `aligned` on
   deadzone_exit: 0.14       # |offset| above this turns `aligned` off again
+  # Where the gripper's grasp point shows in the picture, [x, y] as fractions of width and height. Offsets are
+  # measured from here, not from the frame centre. The console's draggable crosshair changes it with set_aim.
+  aim: [0.5, 0.5]
 
 distance:
   hysteresis: 0.15          # relative margin around each threshold before the hint changes
-  # Fraction of the frame the box fills. `default` is required; add per-label entries as needed.
+  # Fraction of the frame the box fills. `default` is required; add per-label entries as needed. Each in_reach
+  # times (1 + hysteresis) must stay below 1, the whole frame, or a target already seen never becomes in_reach.
   thresholds:
     default: {near: 0.05, in_reach: 0.20}
     cup: {near: 0.05, in_reach: 0.20}
+    # PROVISIONAL, computed rather than measured: a 100 mm printed marker and a 90 degree horizontal field of
+    # view (focal length about 640 px at 1280 wide). Under those, `near` comes on at about 0.36 m (off at 0.42 m)
+    # and `in_reach` at about 0.18 m (off at 0.21 m), where the marker is about 357 px wide and still fits
+    # off-centre. Check once with the real camera and a real print. A station's box is a square of the marker's
+    # mean side (aruco.py), so turning the marker in the image leaves the switch distances as they are (within
+    # 0.2% on renders), and tilting it away makes it read further than it is: up to 6% at 30 degrees, 13% at 45
+    # and 22% at 60.
+    pick station: {near: 0.03, in_reach: 0.12}
+    drop station: {near: 0.03, in_reach: 0.12}
 
 summary:
   min_interval_s: 2.0       # minimum gap between two utterances
@@ -83,16 +152,100 @@ summary:
   slight_band: 0.35         # offsets at or below this are "slightly" left/right/up/down
   band_hysteresis: 0.15     # relative margin around both bands before the wording changes
 
+# The task phase (paul_vision/phase.py): search -> approach -> grasp -> carry -> place -> release -> search.
+# The gripper pads decide grasp, carry, release and drops; the drop station's marker decides place. Without
+# pressure data and without set_phase commands only search and approach occur, exactly as in M1.
+phase:
+  grasp_settle_s: 0.5       # grasp -> carry once contact has held this long (a grip that slips at once is no carry)
+  release_hold_s: 1.0       # release -> search after this long (time to withdraw from the placed object)
+  # carry -> place: the drop station is the target and its distance_hint is place_hint or closer for place_dwell_s.
+  # `near`, not `in_reach`: in the last centimetres the held object covers the marker and the wrist's tilt shrinks
+  # it, and an object let go in carry raises the `dropped` alert. Place is sticky: losing the marker keeps it.
+  place_hint: near
+  place_dwell_s: 0.5
+  # place -> carry only when the station is seen at leave_place_hint or further for leave_place_dwell_s.
+  leave_place_hint: far
+  leave_place_dwell_s: 1.0
+  # `alert: "dropped"` is repeated on every message for this long, so a subscriber that keeps only the newest
+  # message (zmq.CONFLATE, as haptics should) cannot miss it.
+  alert_hold_s: 1.0
+  # No fresh pad reading during a grasp, carry or place that the pads started: keep the phase this long (the bridge
+  # reopens a lost port after pressure.bridge.reopen_s), then fall back to search/approach, saying
+  # "Grip sensor lost." with no alert. A phase set by command is kept without pad data.
+  sensor_loss_hold_s: 2.0
+  # A target lost while its distance_hint was blind_spot_hint keeps the phase at approach, and "Target lost."
+  # unsaid, for blind_spot_s: the closing gripper hides the object. Only while pad readings arrive (they are what
+  # can confirm the grasp); 0 turns it off.
+  blind_spot_hint: in_reach
+  blind_spot_s: 1.5
+
 transport:
   vision_pub: tcp://127.0.0.1:5555     # this module binds here
   pressure_sub: tcp://127.0.0.1:5556   # M2: pressure bridge or mock binds here
-  command_sub: tcp://127.0.0.1:5557    # the console bridge (../bridge) binds here; later also voice
-  robot_sub: tcp://127.0.0.1:5558      # later: arm controller binds here
+  # `command` senders. Each binds its own endpoint (only one process can bind a port); vision connects to all.
+  command_sub:
+    - tcp://127.0.0.1:5557             # the console bridge (../bridge)
+    - tcp://127.0.0.1:5559             # the voice process (python -m paul_vision.voice, voice.endpoint) publishes here
+    - tcp://127.0.0.1:5560             # the last one: python -m paul_vision.send_command binds it by default
+  robot_sub: tcp://127.0.0.1:5558      # the arm controller binds here (`robot`, 10 Hz); read with gripper_load
   send_hwm: 20              # per-subscriber send queue; a stuck subscriber never holds more than this
 
 watchdog:
   stall_timeout_s: 0.5      # no fresh message for this long => publish `degraded`
   heartbeat_s: 0.5          # repeat `degraded` at this period while stalled
+
+# Gripper pressure (M2): four thin-film pads read by a separate microcontroller. pressure_bridge.py publishes
+# them on transport.pressure_sub (mock_pressure.py stands in). `norm` is relative pressure 0..1, not a force.
+# Pad order, as the web console assumes: left tip, left base, right tip, right base.
+# None of these values has been checked on the hardware yet.
+pressure:
+  # How the four pads become one grip level (0..1):
+  #   both_fingers: the less pressed finger, each finger counting its harder pad. A held object presses on
+  #                 both fingers, at the tip or the base; one finger alone (brushing the table, pushing the
+  #                 object) is not a hold.
+  #   any_pad:      the hardest-pressed pad. Use it if one finger's pads are unreliable.
+  #   mean:         the average of the four. A fingertip pinch loads two pads, so it reads half as strong.
+  combine: both_fingers
+  on_threshold: 0.25        # grip level at or above this for on_hold_s turns contact on
+  off_threshold: 0.12       # grip level at or below this for off_hold_s turns it off; below on_threshold
+  on_hold_s: 0.15           # a shorter squeeze (a bump) is not a grasp
+  off_hold_s: 0.30          # a shorter dip (the object shifting in the grip) is not a release
+  # No reading newer than this means contact is unknown: never "holding", never "not holding".
+  # 12 samples at 50 Hz. USB serial on Windows arrives in bursts, so much shorter values would flicker.
+  stale_s: 0.25
+  # Raw reading -> norm per pad: (raw - raw_zero) / (raw_full - raw_zero), clipped to 0..1.
+  # raw_zero: the reading with nothing on the pad; raw_full: the reading that counts as 1. raw_full may be
+  # below raw_zero if the circuit reads lower under pressure. Shipped: the 12-bit ADC range, uncalibrated.
+  calibration:
+    raw_zero: [0, 0, 0, 0]
+    raw_full: [4095, 4095, 4095, 4095]
+  mock:
+    rate_hz: 50             # publish rate; the console expects 50. Must be above 1 / stale_s.
+    ramp_s: 0.2             # a level change takes this long, so thresholds and holds are crossed as in a grip
+    contact_level: 0.6      # the level the toggle key goes to; at least on_threshold
+  bridge:
+    baud: 115200            # must match Serial.begin() in the firmware (the IMU firmware uses 115200)
+    read_timeout_s: 0.05    # longest one serial read waits
+    reopen_s: 1.0           # wait between attempts to open a port that is missing or was lost
+    report_s: 10.0          # period of the status line (samples published, lines skipped)
+
+# Contact from the gripper servo's load, in the arm controller's `robot` messages (transport.robot_sub, 10 Hz),
+# instead of the pads. Vision only subscribes; it never opens the servo bus. The level is sign * load of the
+# gripper joint, clipped to 0..1 (load is the servo's Present_Load / 1000). No reading (no load in the message,
+# a dry run's preview, no message for stale_s) means contact is unknown, as with the pads.
+gripper_load:
+  enabled: false            # true: grip decisions come from here, and the pressure feed is not read
+  sign: 1                   # 1 or -1: the load sign that means the jaws press closed (check with a recorded grasp)
+  # The thresholds and empty_pos are placeholders until recorded grasps give values (README, gripper load).
+  on_threshold: 0.25        # level at or above this for on_hold_s turns contact on
+  off_threshold: 0.12       # level at or below this for off_hold_s turns it off; below on_threshold
+  on_hold_s: 0.2            # 3 samples at 10 Hz
+  off_hold_s: 0.3
+  stale_s: 0.35             # no message newer than this: unknown. Above the 0.1 s period, with room for jitter
+  # Jaws closed on nothing can still press on each other and show load. With the gripper position (0..100)
+  # within empty_margin of empty_pos, the level is 0. null: no check.
+  empty_pos: null
+  empty_margin: 3.0
 
 overlay:
   enabled: true
@@ -109,6 +262,67 @@ stream:
   max_width: 960            # wider frames are downscaled before encoding
   jpeg_quality: 75          # 1..100; lower is smaller and blockier
   max_fps: 30               # at most this many pictures per second are encoded
+
+# The voice process (python -m paul_vision.voice): utterances as text in, `command` messages out. The text comes
+# from stdin (pipe any speech-to-text program in, or type), from --say, or from the local stand-in recognizer
+# (--listen). Vision never touches audio. Nothing in this section sends audio or text off this computer.
+voice:
+  endpoint: tcp://127.0.0.1:5559   # binds here; must be one of transport.command_sub, or vision never hears it
+  # A hackathon hall is loud. An utterance from stdin or --listen counts only if it starts with one of these
+  # phrases; anything else is stray speech and is ignored. [] = every utterance counts. --say never needs one.
+  # Lower case, single spaces. Add a spelling here if your recognizer writes the name differently.
+  wake_words: [paul, hey paul, ok paul, okay paul]
+  # Spoken labels are matched to the known ones (detector.classes plus the operator's tags) by difflib
+  # similarity, 0..1, when they are not said exactly. Below label_cutoff nothing matches, and the refusal names
+  # the closest label. "pillbottle" vs "pill bottle" scores 0.95 and matches; "cupp" vs "cup" 0.86, "bottel" vs
+  # "bottle" 0.83 and "cop" vs "cup" 0.67 are refused, because one changed letter makes another real word
+  # ("mouse" vs "house" 0.80, "lock" vs "block" 0.89, "research" vs "search" 0.86) and a wrong target is worse
+  # than none. Whatever the score, a near match is also refused when its numbers differ ("bin 2" vs "bin 1"),
+  # when it has as many words as the label and one pair of words scores below label_cutoff ("red jug" vs
+  # "red mug"), or when a one-letter word is not said exactly. Phases are matched the same way.
+  label_cutoff: 0.9
+  # The best match must lead the runner-up by this much, or nothing is sent ("red tug" when "red mug" and
+  # "red jug" are both known).
+  label_margin: 0.1
+  # Tag names follow the labels section (labels.max_name_chars, labels.max_prompt_chars): one rule for both.
+  max_utterance_chars: 200  # a longer line is not a command (junk, or a recognizer gone wrong) and is refused
+  # When a command is ready and no subscriber is known, wait this long for vision to subscribe before reporting
+  # the command as not delivered. A vision that was already running subscribes within about 0.5 s of this process
+  # binding (measured on Windows: 0.11 to 0.52 s). Commands are never queued for later.
+  deliver_wait_s: 2.0
+  # The local stand-in recognizer (--listen): Windows' own System.Speech through Windows PowerShell 5.1, with a
+  # grammar made of the command phrases and the known labels only. A demo aid, not the team's cloud service.
+  # Measured by loopback (scripts/voice_loopback.py: two synthetic voices at three speaking rates, 132 commands
+  # and 102 phrases that are not commands, no microphone). With these settings: 130 commands right, 2 missed,
+  # none turned into another command; 7 wrong sends, all from words that sound like a known one ("cap" heard
+  # as "cup" 4 times, "paula" as "paul" 3 times). Without listen.decoy_words: 13, "bowl" and "paula" included.
+  listen:
+    culture: en-US          # which installed Windows recognizer to use
+    # Recognitions below this are printed and never sent. The 7 wrong sends above scored 0.85 to 0.97, so a
+    # higher threshold trades misses for little: at 0.9, 5 wrong and 9 missed.
+    min_confidence: 0.7
+    labels_refresh_s: 2.0   # how often the tag library is checked; a change rebuilds the grammar
+    # Free dictation loaded beside the commands, never sent: speech outside the grammar lands there instead of
+    # on the nearest command. Without it, white noise at 20 dB SNR gave 13 wrong commands in 78 phrases at
+    # confidence up to 0.95 ("the cup is on the table" became "phase release"); with it, none. With it, noise makes
+    # the recognizer deaf instead: at 30 dB SNR 20 of 44 commands were heard, at 20 dB none.
+    decoy: true
+    # The recognizer adapts to the voice it hears. On, results drifted with the session (a second voice after
+    # the first: 4 to 16 of 39 commands missed per speaking rate); off, both voices did the same at every rate.
+    adaptation: false
+    # Name tags by voice ("paul this is <name>", "paul learn <name>") through dictation. Off: 2 of 12 names came
+    # back wrong at confidence 0.95 and above ("red mug" as "red dog"), so the threshold cannot catch them.
+    # When off, name tags by typing a line into the same voice process.
+    dictated_names: false
+    # Words that sound like a wake word or a label but are neither. Each is put in the grammar beside the wake
+    # words and beside the labels after a select verb, so the recognizer can hear "paula" as itself instead of
+    # as "paul"; the parser sends nothing for it. Lower-case words; one that is a wake word or a known label is
+    # left out. [] = none. In the loopback above these two took the wrong sends from 13 to 7 ("bowl" 3 to 0,
+    # "paula" 6 to 3) and cost no command in clean speech; with white noise at 30 dB SNR, 19 of 44 commands were
+    # heard instead of 20. "cap" is not listed: it took "cap" from 4 to 1, but in a loopback of 54 "cup" commands
+    # 6 came back as "cap" and were not sent. A sound-alike not listed here ("cub", "cop", "books") is still heard
+    # as the label it sounds like. Rerun scripts/voice_loopback.py after changing this list.
+    decoy_words: [bowl, paula]
 
 logging:
   interval_s: 2.0           # period of the FPS / latency log line

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CAMERA_URL } from '../config'
-import { migrateSettings } from './settings'
+import { AIM_DEFAULT, DEFAULT_CAMERA_URL } from '../config'
+import { mergeSettings, migrateSettings, useSettings } from './settings'
 
 describe('migrateSettings', () => {
   it('fills the empty camera address that version 1 saved', () => {
@@ -26,5 +26,33 @@ describe('migrateSettings', () => {
   it('survives a save that is not an object', () => {
     expect(migrateSettings(null, 1)).toEqual({ cameraUrl: DEFAULT_CAMERA_URL })
     expect(migrateSettings('broken', 1)).toEqual({ cameraUrl: DEFAULT_CAMERA_URL })
+  })
+})
+
+describe('mergeSettings', () => {
+  const current = useSettings.getState()
+
+  it('keeps the default crosshair when the save has none', () => {
+    const merged = mergeSettings({ speak: false }, current)
+    expect(merged.aim).toEqual(AIM_DEFAULT)
+    expect(merged.speak).toBe(false)
+  })
+
+  it('restores a saved crosshair', () => {
+    expect(mergeSettings({ aim: { x: 0.62, y: 0.58 } }, current).aim).toEqual({ x: 0.62, y: 0.58 })
+  })
+
+  it('pulls a crosshair saved off the picture back inside it', () => {
+    expect(mergeSettings({ aim: { x: 1.4, y: -0.2 } }, current).aim).toEqual({ x: 0.95, y: 0.05 })
+  })
+
+  it('falls back to the default for a damaged crosshair', () => {
+    for (const aim of [null, 'centre', { x: 0.5 }, { x: Number.NaN, y: 0.5 }, { x: '0.5', y: 0.5 }]) {
+      expect(mergeSettings({ aim }, current).aim).toEqual(AIM_DEFAULT)
+    }
+  })
+
+  it('survives a save that is not an object', () => {
+    expect(mergeSettings(null, current)).toEqual(current)
   })
 })
